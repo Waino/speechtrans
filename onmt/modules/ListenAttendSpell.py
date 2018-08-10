@@ -17,12 +17,12 @@ from onmt.Models import EncoderBase
 # Note the input should have timestep%2 == 0
 class pBLSTMLayer(nn.Module):
     def __init__(self, input_feature_size, hidden_size,
-                 rnn_unit='LSTM', dropout=0.0):
+                 rnn_type='LSTM', dropout=0.0):
         super(pBLSTMLayer, self).__init__()
-        self.rnn_unit = getattr(nn, rnn_unit.upper())
+        self.rnn_type = getattr(nn, rnn_type.upper())
 
         # feature dimension will be doubled since time resolution reduction
-        self.BLSTM = self.rnn_unit(input_feature_size * 2, hidden_size, 1,
+        self.BLSTM = self.rnn_type(input_feature_size * 2, hidden_size, 1,
                                    bidirectional=True,
                                    dropout=dropout,
                                    batch_first=True)
@@ -44,19 +44,19 @@ class pBLSTMLayer(nn.Module):
 # Input shape should be [# of sample, timestep, features]
 class LasEncoder(EncoderBase):
     def __init__(self, input_feature_size, hidden_size,
-                 rnn_unit, dropout=0.0, num_layers=3, **kwargs):
+                 rnn_type, dropout=0.0, num_layers=3, **kwargs):
         super(LasEncoder, self).__init__()
         modules = []
         for i in range(num_layers):
             if i == 0:
                 modules.append(pBLSTMLayer(input_feature_size,
                                            hidden_size,
-                                           rnn_unit=rnn_unit,
+                                           rnn_type=rnn_type,
                                            dropout=dropout))
             else:
                 modules.append(pBLSTMLayer(hidden_size * 2,
                                            hidden_size,
-                                           rnn_unit=rnn_unit,
+                                           rnn_type=rnn_type,
                                            dropout=dropout))
         self.modules = nn.ModuleList(modules)
         self.num_layers = num_layers

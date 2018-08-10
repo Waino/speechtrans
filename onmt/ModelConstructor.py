@@ -291,3 +291,112 @@ def make_base_model(model_opt, fields, gpu, checkpoint=None):
         model.cpu()
 
     return model
+
+
+def make_e2e_model(model_opt, fields, gpu, checkpoint=None):
+    """
+    Args:
+        model_opt: the option loaded from checkpoint.
+        fields: `Field` objects for the model.
+        gpu(bool): whether to use gpu.
+        checkpoint: the model gnerated by train phase, or a resumed snapshot
+                    model from a stopped training.
+    Returns:
+        the E2EModel.
+    """
+
+    ### Make embeddings
+    src_dict = fields["src"].vocab
+    feature_dicts = onmt.io.collect_feature_vocabs(fields, 'src')
+    src_embeddings = make_embeddings(model_opt, src_dict,
+                                     feature_dicts)
+    # "for_encoder" actually means "source"
+    tgt_dict = fields["tgt"].vocab
+    feature_dicts = onmt.io.collect_feature_vocabs(fields, 'tgt')
+    tgt_embeddings = make_embeddings(
+        model_opt, tgt_dict, feature_dicts, for_encoder=False)
+
+    # Share the embedding matrix - preprocess with share_vocab required.
+    if model_opt.share_embeddings:
+        # src/tgt vocab should be the same if `-share_vocab` is specified.
+        if src_dict != tgt_dict:
+            raise AssertionError('The `-share_vocab` should be set during '
+                                 'preprocess if you use share_embeddings!')
+
+        tgt_embeddings.word_lut.weight = src_embeddings.word_lut.weight
+
+    ### Make encoders.
+    # source audio
+    src_aud_encoder = LasEncoder(opt.audio_feature_size,
+                                 hidden_size=opt.rnn_size,
+                                 rnn_type=opt.rnn_type,
+                                 dropout=opt.dropout,
+                                 num_layers=opt.las_layers)
+    # source text
+    src_txt_encoder = make_encoder(model_opt, src_embeddings)
+
+    ### Make decoders.
+    # source text
+    src_txt_decoder = make_decoder(model_opt, src_embeddings)
+    # target text
+    tgt_txt_decoder = make_decoder(model_opt, tgt_embeddings)
+
+    # Make end-to-end speech translation model
+    model = E2EModel(src_aud_encoder,
+                     src_txt_encoder,
+                     src_txt_decoder,
+                     tgt_txt_decoder)
+
+    # Make Generators.
+    src_generator = nn.Sequential(
+        nn.Linear(model_opt.rnn_size, len(fields["src"].vocab)),
+        nn.LogSoftmax(dim=-1))
+    if model_opt.share_decoder_embeddings:
+        src_generator[0].weight = src_txt_decoder.embeddings.word_lut.weight
+
+    tgt_generator = nn.Sequential(
+        nn.Linear(model_opt.rnn_size, len(fields["tgt"].vocab)),
+        nn.LogSoftmax(dim=-1))
+    if model_opt.share_decoder_embeddings:
+        tgt_generator[0].weight = tgt_txt_decoder.embeddings.word_lut.weight
+
+    # Load the model states from checkpoint or initialize them.
+    if checkpoint is not None:
+        print('Loading model parameters.')
+        model.load_state_dict(checkpoint['model'])
+        src_generator.load_state_dict(checkpoint['src_generator'])
+        trg_generator.load_state_dict(checkpoint['trg_generator'])
+    else:
+        if model_opt.param_init != 0.0:
+            print('Intializing model parameters.')
+            for p in model.parameters():
+                p.data.uniform_(-model_opt.param_init, model_opt.param_init)
+            for p in generator.parameters():
+                p.data.uniform_(-model_opt.param_init, model_opt.param_init)
+        if model_opt.param_init_glorot:
+            for p in model.parameters():
+                if p.dim() > 1:
+                    xavier_uniform(p)
+            for p in generator.parameters():
+                if p.dim() > 1:
+                    xavier_uniform(p)
+
+        # FIXME: pretrained embeddings
+        #if hasattr(model.encoder, 'embeddings'):
+        #    model.encoder.embeddings.load_pretrained_vectors(
+        #            model_opt.pre_word_vecs_enc, model_opt.fix_word_vecs_enc)
+        #if hasattr(model.decoder, 'embeddings'):
+        #    model.decoder.embeddings.load_pretrained_vectors(
+        #            model_opt.pre_word_vecs_dec, model_opt.fix_word_vecs_dec)
+
+    # Add generator to model (this registers it as parameter of model).
+    model.src_generator = src_generator
+    model.trg_generator = trg_generator
+
+    # Make the whole model leverage GPU if indicated to do so.
+    if gpu:
+        model.cuda()
+    else:
+        model.cpu()
+
+    return model
