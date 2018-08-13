@@ -290,6 +290,9 @@ class Trainer(object):
             if self.data_type == 'text':
                 _, src_lengths = batch.src
                 report_stats.n_src_words += src_lengths.sum()
+            elif self.data_type == 'e2e':
+                src_lengths = None
+                assert not self.trunc_size
             else:
                 src_lengths = None
 
@@ -302,8 +305,14 @@ class Trainer(object):
                 # 2. F-prop all but generator.
                 if self.grad_accum_count == 1:
                     self.model.zero_grad()
-                outputs, attns, dec_state = \
-                    self.model(src, tgt, src_lengths, dec_state)
+                if self.data_type == 'e2e':
+                    outputs, attns, dec_state = \
+                        self.model(batch.feats, batch.feats_mask,
+                                   src, tgt,
+                                   task=batch.task)
+                else:
+                    outputs, attns, dec_state = \
+                        self.model(src, tgt, src_lengths, dec_state)
 
                 # 3. Compute loss in shards for memory efficiency.
                 batch_stats = self.train_loss.sharded_compute_loss(
