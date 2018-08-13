@@ -109,7 +109,7 @@ class TransformerEncoder(EncoderBase):
              for i in range(num_layers)])
         self.layer_norm = onmt.modules.LayerNorm(hidden_size)
 
-    def forward(self, input, lengths=None, hidden=None):
+    def forward(self, input, src_pad_mask, hidden=None):
         """ See :obj:`EncoderBase.forward()`"""
         self._check_args(input, lengths, hidden)
 
@@ -117,21 +117,21 @@ class TransformerEncoder(EncoderBase):
         s_len, n_batch, emb_dim = emb.size()
 
         out = emb.transpose(0, 1).contiguous()
-        words = input[:, :, 0].transpose(0, 1)
+        src_pad_mask = src_pad_mask.transpose(0, 1)
         # CHECKS
         out_batch, out_len, _ = out.size()
-        w_batch, w_len = words.size()
+        w_batch, w_len = src_pad_mask.size()
         aeq(out_batch, w_batch)
         aeq(out_len, w_len)
         # END CHECKS
 
         # Make mask.
         padding_idx = self.embeddings.word_padding_idx
-        mask = words.data.eq(padding_idx).unsqueeze(1) \
+        src_pad_mask = src_pad_mask.unsqueeze(1) \
             .expand(w_batch, w_len, w_len)
         # Run the forward pass of every layer of the tranformer.
         for i in range(self.num_layers):
-            out = self.transformer[i](out, mask)
+            out = self.transformer[i](out, src_pad_mask)
         out = self.layer_norm(out)
 
         return Variable(emb.data), out.transpose(0, 1).contiguous()
@@ -272,7 +272,7 @@ class TransformerDecoder(nn.Module):
             self._copy = True
         self.layer_norm = onmt.modules.LayerNorm(hidden_size)
 
-    def forward(self, tgt, memory_bank, state, memory_lengths=None):
+    def forward(self, tgt, memory_bank, state, mask=None):
         """
         See :obj:`onmt.modules.RNNDecoderBase.forward()`
         """
@@ -282,10 +282,10 @@ class TransformerDecoder(nn.Module):
         memory_len, memory_batch, _ = memory_bank.size()
         aeq(tgt_batch, memory_batch)
 
-        src = state.src
-        src_words = src[:, :, 0].transpose(0, 1)
+        src_pad_mask = mask if mask is not None else state.mask
+        src_pad_mask = src_pad_mask.transpose(0, 1)
         tgt_words = tgt[:, :, 0].transpose(0, 1)
-        src_batch, src_len = src_words.size()
+        src_batch, src_len = src_pad_mask.size()
         tgt_batch, tgt_len = tgt_words.size()
         aeq(tgt_batch, memory_batch, src_batch, tgt_batch)
         aeq(memory_len, src_len)
@@ -310,7 +310,7 @@ class TransformerDecoder(nn.Module):
         src_memory_bank = memory_bank.transpose(0, 1).contiguous()
 
         padding_idx = self.embeddings.word_padding_idx
-        src_pad_mask = src_words.data.eq(padding_idx).unsqueeze(1) \
+        src_pad_mask = src_pad_mask.unsqueeze(1) \
             .expand(src_batch, tgt_len, src_len)
         tgt_pad_mask = tgt_words.data.eq(padding_idx).unsqueeze(1) \
             .expand(tgt_batch, tgt_len, tgt_len)
@@ -341,18 +341,17 @@ class TransformerDecoder(nn.Module):
         state = state.update_state(tgt, saved_inputs)
         return outputs, state, attns
 
-    def init_decoder_state(self, src, memory_bank, enc_hidden):
-        return TransformerDecoderState(src)
+    def init_decoder_state(self, mask, memory_bank, enc_hidden):
+        return TransformerDecoderState(mask)
 
 
 class TransformerDecoderState(DecoderState):
-    def __init__(self, src):
+    def __init__(self, mask):
         """
         Args:
-            src (FloatTensor): a sequence of source words tensors
-                    with optional feature tensors, of size (len x batch).
+            mask (FloatTensor): a mask for the src, of size (len x batch).
         """
-        self.src = src
+        self.mask = mask
         self.previous_input = None
         self.previous_layer_inputs = None
 
@@ -361,16 +360,16 @@ class TransformerDecoderState(DecoderState):
         """
         Contains attributes that need to be updated in self.beam_update().
         """
-        return (self.previous_input, self.previous_layer_inputs, self.src)
+        return (self.previous_input, self.previous_layer_inputs, self.mask)
 
     def update_state(self, input, previous_layer_inputs):
         """ Called for every decoder forward pass. """
-        state = TransformerDecoderState(self.src)
+        state = TransformerDecoderState(self.mask)
         state.previous_input = input
         state.previous_layer_inputs = previous_layer_inputs
         return state
 
     def repeat_beam_size_times(self, beam_size):
         """ Repeat beam_size times along batch dimension. """
-        self.src = Variable(self.src.data.repeat(1, beam_size, 1),
-                            volatile=True)
+        self.mask = Variable(self.mask.data.repeat(1, beam_size, 1),
+                             volatile=True)

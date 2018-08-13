@@ -80,15 +80,18 @@ class E2EModel(nn.Module):
         self.src_txt_decoder = src_txt_decoder
         self.tgt_txt_decoder = tgt_txt_decoder
 
-    def forward(self, feats, src, tgt, lengths, task='main'):
+    def forward(self, feats, feats_mask, src, tgt, task='main'):
         if task == 'main':
             assert feats is not None
             encoder = self.src_aud_encoder
             inp = feats
+            mask = feats_mask
         elif task == 'text-only':
             assert feats is None
             encoder = self.src_txt_encoder
             inp = src
+            padding_idx = self.src_txt_encoder.embeddings.word_padding_idx
+            mask = src.data.eq(padding_idx)
         #elif task = 'asr':
         else:
             raise Exception('Unknown task "{}"'.format(task))
@@ -98,28 +101,22 @@ class E2EModel(nn.Module):
         trg_feed = trg[:-1]
 
         # encode with appropriate encoder
-        enc_final, memory_bank = encoder(inp, lengths)
+        enc_final, memory_bank = encoder(inp, mask)
 
         # decode to src
-        # FIXME: Transformer decoder calculates mask for memory_bank
-        # FIXME: by looking for padding_idx in src
         enc_state = self.src_txt_decoder.init_decoder_state(
-            FIXME, memory_bank, enc_final)
+            mask, memory_bank, enc_final)
         # (decoder_outputs, dec_state, attns)
         src_txt_decoder_out = self.src_txt_decoder(
-            src_feed, memory_bank,
-            enc_state if dec_state is None else dec_state,
-            memory_lengths=lengths)
+            src_feed, memory_bank, enc_state,
+            mask=mask)
 
         # decode to tgt
-        # FIXME: Transformer decoder calculates mask for memory_bank
-        # FIXME: by looking for padding_idx in src
         enc_state = self.tgt_txt_decoder.init_decoder_state(
-            FIXME, memory_bank, enc_final)
+            mask, memory_bank, enc_final)
         # (decoder_outputs, dec_state, attns)
         tgt_txt_decoder_out = self.tgt_txt_decoder(
-            tgt_feed, memory_bank,
-            enc_state if dec_state is None else dec_state,
-            memory_lengths=lengths)
+            tgt_feed, memory_bank, enc_state,
+            mask=mask)
 
         return src_txt_decoder_out, tgt_txt_decoder_out
