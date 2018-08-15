@@ -45,6 +45,10 @@ def make_shards(generator, shard_size):
 
 def write_shard(shard, filepath):
     np.savez_compressed(filepath, **shard)
+def write_key_list(key_list, filepath):
+    with open(filepath, "w") as fo:
+        for key in key_list:
+            print(key, file=fo)
 
 #Data readers (as python generators):
 def feats_ark_generator(ark, name):
@@ -85,5 +89,7 @@ if __name__  == "__main__":
     generator = feats_scp_generator(args.feats_scp, "mfcc")
     for i, shard in enumerate(make_shards(generator, args.shard_size)):
         shard_path = outdir / "keys_mfccs.{shardnum}.shard".format(shardnum=str(i)) 
+        key_list_path = outdir / "keys.{shardnum}.txt".format(shardnum=str(i))
         write_shard(shard, shard_path)
+        write_key_list(shard["keys"], key_list_path)
 
