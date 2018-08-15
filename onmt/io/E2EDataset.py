@@ -5,6 +5,7 @@ from itertools import chain
 import io
 import codecs
 import sys
+import pathlib
 
 import torch
 import torchtext
@@ -13,7 +14,7 @@ from onmt.Utils import aeq
 from onmt.io.TextDataset import TextDataset
 from onmt.io.DatasetBase import (ONMTDatasetBase, UNK_WORD,
                                  PAD_WORD, BOS_WORD, EOS_WORD)
-
+import numpy as np
 
 class E2EDataset(ONMTDatasetBase):
     """ Dataset for end-to-end speech translation """
@@ -86,7 +87,7 @@ class E2EDataset(ONMTDatasetBase):
             # (minibatch_size, None, feat_len)
             # -> (minibatch_size, max_len, feat_len)
             raise NotImplementedError() # FIXME Aku
-            
+
 
         def make_audio_mask(data, vocab, is_train):
             # data: a sequence with one of whatever
@@ -152,3 +153,23 @@ class SimpleShardedCorpusIterator(object):
         assert not feats
 
         return example_dict
+
+
+class SimpleAudioShardIterator(object):
+    shard_template = "keys_mfccs.{shardnum}.shard.npz"
+    def __init__(self, shard_dir_path):
+        self.dirpath = pathlib.Path(shard_dir_path)
+        self.num_shards = len(path for path in self.dirpath.iterdir()
+            if path.is_file() and path.endswith('.shard.npz'))
+
+    def __iter__(self):
+        #range instead of directly iterating on the dir contents
+        #so that we can go through them in correct order
+        for i in range(self.num_shards):
+            data = self.get_shard(i)
+            yield data["mfccs"]
+
+    def get_shard(self, shard_index):
+        filepath = self.dirpath / shard_template.format(shardnum = shard_index)
+        return np.load(filepath)
+        
