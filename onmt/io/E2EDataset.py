@@ -59,7 +59,7 @@ class E2EDataset(ONMTDatasetBase):
             path (str): location of a src audio file.
 
         Returns:
-            (example_dict iterator, num_feats) tuple.
+            (example_dict iterator, 0) tuple.
         """
         # where example_dicts have the keys:
         # src_audio, src_audio_mask
@@ -82,13 +82,20 @@ class E2EDataset(ONMTDatasetBase):
             # was in src_audio in example_dicts
             # for each entry in the minibatch
             # returns: padded numpy float array
+
+            # (minibatch_size, None, feat_len)
+            # -> (minibatch_size, max_len, feat_len)
             raise NotImplementedError() # FIXME Aku
+            
 
         def make_audio_mask(data, vocab, is_train):
             # data: a sequence with one of whatever
             # was in src_audio_mask in example_dicts
             # for each entry in the minibatch
             # returns: numpy float array with 0 if real value and 1 if padding
+
+            # (minibatch_size, variable:lengths)
+            # -> (minibatch_size, max_len)
             raise NotImplementedError() # FIXME Aku
 
         fields["src_audio"] = torchtext.data.Field(
