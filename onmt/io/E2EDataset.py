@@ -21,14 +21,14 @@ class E2EDataset(ONMTDatasetBase):
                  fields,
                  src_audio_examples_iter,
                  src_text_examples_iter,
-                 tft_text_examples_iter):
+                 tgt_text_examples_iter):
         self.data_type = 'e2e'
 
         examples_iter = (self._join_dicts(src_audio, src_text, tgt_text)
                          for src_audio, src_text, tgt_text
                          in zip(src_audio_examples_iter,
                                 src_text_examples_iter,
-                                tft_text_examples_iter))
+                                tgt_text_examples_iter))
 
         # Peek at the first to see which fields are used.
         ex, examples_iter = self._peek(examples_iter)
