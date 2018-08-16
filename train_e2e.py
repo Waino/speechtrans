@@ -191,8 +191,7 @@ def make_dataset_iter(datasets, fields, opt, is_train=True):
                            device, is_train)
 
 
-# FIXME: need loss compute for src and trg separately
-def make_loss_compute(model, tgt_vocab, opt, train=True):
+def make_loss_compute(model, vocab, opt, train=True, side='tgt'):
     """
     This returns user-defined LossCompute object, which is used to
     compute loss in train/validate process. You can implement your
@@ -200,8 +199,12 @@ def make_loss_compute(model, tgt_vocab, opt, train=True):
     """
     assert not opt.copy_attn
     assert not opt.type_weighting_loss
-    compute = onmt.Loss.NMTLossCompute(
-        model.generator, tgt_vocab,
+    if side == 'src':
+        generator = model.src_generator
+    if side == 'tgt':
+        generator = model.tgt_generator
+    compute = onmt.Loss.E2ELossCompute(
+        generator, vocab, side=side,
         label_smoothing=opt.label_smoothing if train else 0.0)
 
     if use_gpu(opt):
@@ -235,9 +238,10 @@ class Interleave(object):
         return self.cur_dataset
 
 def train_model(model, fields, optim, data_type, model_opt):
-    train_loss = make_loss_compute(model, fields["tgt"].vocab, opt)
+    src_train_loss = make_loss_compute(model, fields["src"].vocab, opt, side='src')
+    tgt_train_loss = make_loss_compute(model, fields["tgt"].vocab, opt, side='tgt')
     valid_loss = make_loss_compute(model, fields["tgt"].vocab, opt,
-                                   train=False)
+                                   train=False, side='tgt')
 
     trunc_size = opt.truncated_decoder  # Badly named...
     shard_size = opt.max_generator_batches
@@ -247,10 +251,17 @@ def train_model(model, fields, optim, data_type, model_opt):
     e2e_audio = onmt.io.E2EDataset.SimpleAudioShardIterator(
         opt.audio_shard_dir)
 
-    trainer = onmt.Trainer(model, train_loss, valid_loss, optim,
-                           trunc_size, shard_size, data_type,
-                           norm_method, grad_accum_count,
-                           e2e_audio=e2e_audio)
+    trainer = onmt.Trainer(model,
+                           tgt_train_loss,
+                           valid_loss,
+                           optim,
+                           trunc_size,
+                           shard_size,
+                           data_type,
+                           norm_method,
+                           grad_accum_count,
+                           e2e_audio=e2e_audio,
+                           src_train_loss=src_train_loss)
 
     print('\nStart training...')
     print(' * number of epochs: %d, starting from Epoch %d' %

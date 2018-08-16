@@ -210,6 +210,18 @@ class NMTLossCompute(LossComputeBase):
 
         return loss, stats
 
+class E2ELossCompute(NMTLossCompute):
+    def __init__(self, *args, side='tgt', **kwargs):
+        self.side = side
+        super().__init__(*args, **kwargs)
+
+    def _make_shard_state(self, batch, output, range_, attns=None):
+        target = batch.__getattr__(self.side)
+        return {
+            "output": output,
+            "target": target[range_[0] + 1: range_[1]],
+        }
+
 
 class TypeWeightingLossCompute(NMTLossCompute):
     def __init__(self, *args, tgt_vocab_weights, **kwargs):
