@@ -477,6 +477,11 @@ def train_opts(parser):
     group.add_argument('-window_size', type=float, default=.02,
                        help="Window size for spectrogram in seconds.")
 
+    # e2e
+    group = parser.add_argument_group('End-to-end speech translation')
+    group.add_argument('-task_mix_rate', type=float, default=0.5,
+                       help='Probability of selecting a text-only task.')
+
 
 def translate_opts(parser, use_ensemble=False):
     group = parser.add_argument_group('Model')
