@@ -135,7 +135,8 @@ class E2EDataset(ONMTDatasetBase):
 
 class SimpleShardedCorpusIterator(object):
     """Makes shards of exactly shard_size examples"""
-    def __init__(self, corpus_path, line_truncate, side, shard_size, use_chars=False):
+    def __init__(self, key_corpus, corpus_path, line_truncate, side, shard_size, use_chars=False):
+        assert key_corpus is None
         try:
             # The codecs module seems to have bugs with seek()/tell(),
             # so we use io.open().
@@ -169,7 +170,69 @@ class SimpleShardedCorpusIterator(object):
         if self.line_truncate:
             line = line[:self.line_truncate]
         words, feats, n_feats = TextDataset.extract_text_features(line)
-        example_dict = {self.side: words, "indices": index}
+        example_dict = {self.side: words, "indices": index, 'task': 'text-only'}
+        assert not feats
+
+        return example_dict
+
+
+class KeyedShardedCorpusIterator(object):
+    shard_template = "keys.{shardnum}.txt"
+    def __init__(self, key_corpus, corpus_path, line_truncate, side, shard_size, use_chars=False):
+        assert key_corpus is not None
+        try:
+            # The codecs module seems to have bugs with seek()/tell(),
+            # so we use io.open().
+            self.corpus = io.open(corpus_path, "r", encoding="utf-8")
+        except IOError:
+            sys.stderr.write("Failed to open corpus file: %s" % corpus_path)
+            sys.exit(1)
+        self.line_truncate = line_truncate
+        self.side = side
+        self.shard_size = shard_size
+        self.use_chars = use_chars
+        self.eof = False
+
+        self.dirpath = pathlib.Path(key_corpus)
+        self.num_shards = len(path for path in self.dirpath.iterdir()
+            if path.is_file() and path.endswith('.txt'))
+        self.current_shard = 0
+        self.current_line = 0
+
+    def __iter__(self):
+        # slurp in entire text corpus, index by key
+        lines_by_key = {}
+        for line in self.corpus:
+            key, line = line.rstrip().split(' ', 1)
+            lines_by_key[key] = line
+        self.corpus.close()
+        if self.current_shard >= self.num_shards:
+            self.eof = True
+            raise StopIteration
+        for key in self.get_shard(i):
+            line = lines_by_key[key]
+            yield _example_dict_iter(line, self.current_line)
+            self.current_line += 1
+        self.current_shard += 1
+
+    def get_shard(self, shard_index):
+        filepath = self.dirpath / shard_template.format(shardnum = shard_index)
+        with open(filepath, 'r') as fobj:
+            for line in fobj:
+                yield line.strip()
+
+    def hit_end(self):
+        return self.eof
+
+    def _example_dict_iter(self, line, index):
+        if self.use_chars:
+            line = list(line)
+        else:
+            line = line.split()
+        if self.line_truncate:
+            line = line[:self.line_truncate]
+        words, feats, n_feats = TextDataset.extract_text_features(line)
+        example_dict = {self.side: words, "indices": index, 'task': 'main'}
         assert not feats
 
         return example_dict
