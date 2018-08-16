@@ -191,29 +191,18 @@ def make_dataset_iter(datasets, fields, opt, is_train=True):
                            device, is_train)
 
 
+# FIXME: need loss compute for src and trg separately
 def make_loss_compute(model, tgt_vocab, opt, train=True):
     """
     This returns user-defined LossCompute object, which is used to
     compute loss in train/validate process. You can implement your
     own *LossCompute class, by subclassing LossComputeBase.
     """
-    if opt.copy_attn:
-        compute = onmt.modules.CopyGeneratorLossCompute(
-            model.generator, tgt_vocab, opt.copy_attn_force,
-            opt.copy_loss_by_seqlength)
-    elif train and opt.type_weighting_loss is not None:
-        with open(opt.type_weighting_loss, 'r') as fobj:
-            weighted = set(line.strip() for line in fobj)
-        tgt_vocab_weights = [2. if word in weighted else 1.
-                             for word in tgt_vocab.itos]
-        compute = onmt.Loss.TypeWeightingLossCompute(
-            model.generator, tgt_vocab,
-            tgt_vocab_weights=tgt_vocab_weights,
-            label_smoothing=opt.label_smoothing)
-    else:
-        compute = onmt.Loss.NMTLossCompute(
-            model.generator, tgt_vocab,
-            label_smoothing=opt.label_smoothing if train else 0.0)
+    assert not opt.copy_attn
+    assert not opt.type_weighting_loss
+    compute = onmt.Loss.NMTLossCompute(
+        model.generator, tgt_vocab,
+        label_smoothing=opt.label_smoothing if train else 0.0)
 
     if use_gpu(opt):
         compute.cuda()

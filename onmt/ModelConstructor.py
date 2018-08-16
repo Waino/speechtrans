@@ -15,7 +15,7 @@ from onmt.Models import NMTModel, MeanEncoder, RNNEncoder, \
 from onmt.modules import Embeddings, ImageEncoder, CopyGenerator, \
                          TransformerEncoder, TransformerDecoder, \
                          CNNEncoder, CNNDecoder, AudioEncoder, \
-                         LinkedEmbeddings, LasEncoder
+                         LinkedEmbeddings, LasEncoder, E2EModel
 from onmt.Utils import use_gpu
 from torch.nn.init import xavier_uniform
 
@@ -365,19 +365,24 @@ def make_e2e_model(model_opt, fields, gpu, checkpoint=None):
         print('Loading model parameters.')
         model.load_state_dict(checkpoint['model'])
         src_generator.load_state_dict(checkpoint['src_generator'])
-        trg_generator.load_state_dict(checkpoint['trg_generator'])
+        tgt_generator.load_state_dict(checkpoint['tgt_generator'])
     else:
         if model_opt.param_init != 0.0:
             print('Intializing model parameters.')
             for p in model.parameters():
                 p.data.uniform_(-model_opt.param_init, model_opt.param_init)
-            for p in generator.parameters():
+            for p in src_generator.parameters():
+                p.data.uniform_(-model_opt.param_init, model_opt.param_init)
+            for p in tgt_generator.parameters():
                 p.data.uniform_(-model_opt.param_init, model_opt.param_init)
         if model_opt.param_init_glorot:
             for p in model.parameters():
                 if p.dim() > 1:
                     xavier_uniform(p)
-            for p in generator.parameters():
+            for p in src_generator.parameters():
+                if p.dim() > 1:
+                    xavier_uniform(p)
+            for p in tgt_generator.parameters():
                 if p.dim() > 1:
                     xavier_uniform(p)
 
@@ -391,7 +396,7 @@ def make_e2e_model(model_opt, fields, gpu, checkpoint=None):
 
     # Add generator to model (this registers it as parameter of model).
     model.src_generator = src_generator
-    model.trg_generator = trg_generator
+    model.tgt_generator = tgt_generator
 
     # Make the whole model leverage GPU if indicated to do so.
     if gpu:
