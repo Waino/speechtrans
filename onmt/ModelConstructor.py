@@ -15,7 +15,7 @@ from onmt.Models import NMTModel, MeanEncoder, RNNEncoder, \
 from onmt.modules import Embeddings, ImageEncoder, CopyGenerator, \
                          TransformerEncoder, TransformerDecoder, \
                          CNNEncoder, CNNDecoder, AudioEncoder, \
-                         LinkedEmbeddings
+                         LinkedEmbeddings, LasEncoder
 from onmt.Utils import use_gpu
 from torch.nn.init import xavier_uniform
 
@@ -327,11 +327,11 @@ def make_e2e_model(model_opt, fields, gpu, checkpoint=None):
 
     ### Make encoders.
     # source audio
-    src_aud_encoder = LasEncoder(opt.audio_feature_size,
-                                 hidden_size=opt.rnn_size,
-                                 rnn_type=opt.rnn_type,
-                                 dropout=opt.dropout,
-                                 num_layers=opt.las_layers)
+    src_aud_encoder = LasEncoder(model_opt.audio_feature_size,
+                                 hidden_size=model_opt.rnn_size,
+                                 rnn_type=model_opt.rnn_type,
+                                 dropout=model_opt.dropout,
+                                 num_layers=model_opt.las_layers)
     # source text
     src_txt_encoder = make_encoder(model_opt, src_embeddings)
 

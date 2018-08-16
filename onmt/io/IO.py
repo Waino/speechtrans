@@ -326,6 +326,9 @@ def build_vocab(train_dataset_files, fields, data_type, share_vocab,
             fields["src"].vocab = merged_vocab
             fields["tgt"].vocab = merged_vocab
 
+    if data_type == 'e2e':
+        _build_field_vocab(fields["task"], counter["task"])
+
     return fields
 
 

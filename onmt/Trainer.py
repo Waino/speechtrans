@@ -112,7 +112,8 @@ class Trainer(object):
 
     def __init__(self, model, train_loss, valid_loss, optim,
                  trunc_size=0, shard_size=32, data_type='text',
-                 norm_method="sents", grad_accum_count=1):
+                 norm_method="sents", grad_accum_count=1,
+                 e2e_audio=None):
         # Basic attributes.
         self.model = model
         self.train_loss = train_loss
@@ -124,6 +125,7 @@ class Trainer(object):
         self.norm_method = norm_method
         self.grad_accum_count = grad_accum_count
         self.progress_step = 0
+        self.e2e_audio = e2e_audio
 
         assert(grad_accum_count > 0)
         if grad_accum_count > 1:
@@ -155,7 +157,7 @@ class Trainer(object):
             if len(train_iter) % self.grad_accum_count > 0:
                 add_on += 1
             num_batches = len(train_iter) / self.grad_accum_count + add_on
-        except NotImplementedError:
+        except (TypeError, NotImplementedError):
             # Dynamic batching
             num_batches = -1
 
@@ -292,6 +294,13 @@ class Trainer(object):
                 report_stats.n_src_words += src_lengths.sum()
             elif self.data_type == 'e2e':
                 src_lengths = None
+                # absurd boilerplate because torchtext doesn't
+                # allow passing through non-numerical data
+                task = batch.dataset.fields['task'].vocab.itos[batch.task.data[0]]
+                shard_idx = batch.shard_idx.data[0]
+                feat_idx = batch.feat_idx.data
+                feats, feats_mask = self.e2e_audio.get_minibatch_features(
+                    shard_idx, feat_idx)
                 assert not self.trunc_size
             else:
                 src_lengths = None
@@ -306,10 +315,11 @@ class Trainer(object):
                 if self.grad_accum_count == 1:
                     self.model.zero_grad()
                 if self.data_type == 'e2e':
+                    print(type(self.model))
                     outputs, attns, dec_state = \
-                        self.model(batch.feats, batch.feats_mask,
+                        self.model(feats, feats_mask,
                                    src, tgt,
-                                   task=batch.task)
+                                   task=task)
                 else:
                     outputs, attns, dec_state = \
                         self.model(src, tgt, src_lengths, dec_state)

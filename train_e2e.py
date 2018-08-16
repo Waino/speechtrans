@@ -12,6 +12,7 @@ from datetime import datetime
 import torch
 import torch.nn as nn
 from torch import cuda
+import numpy as np
 
 import onmt
 import onmt.io
@@ -220,15 +221,29 @@ def make_loss_compute(model, tgt_vocab, opt, train=True):
     return compute
 
 
-def interleave(main_iter, textonly_iter, opt):
-    while True:
-        # until either iterator runs out (likely to be main_iter)
-        if np.random.random_sample() < opt.task_mix_rate:
-            print('Text-only task')
-            yield next(textonly_iter)
-        else:
-            print('Main task')
-            yield next(main_iter)
+class Interleave(object):
+    def __init__(self, main_iter, textonly_iter, opt):
+        # torchtext "iterators" are not actually iterators
+        self.main = main_iter
+        self.textonly = textonly_iter
+        self.main_iter = iter(main_iter)
+        self.textonly_iter = iter(textonly_iter)
+        self.cur_dataset = None
+
+    def __iter__(self):
+        while True:
+            # until either iterator runs out (likely to be main_iter)
+            if np.random.random_sample() < opt.task_mix_rate:
+                self.cur_dataset = self.textonly.get_cur_dataset()
+                print('Text-only task')
+                yield next(self.textonly_iter)
+            else:
+                print('Main task')
+                self.cur_dataset = self.main.get_cur_dataset()
+                yield next(self.main_iter)
+
+    def get_cur_dataset(self):
+        return self.cur_dataset
 
 def train_model(model, fields, optim, data_type, model_opt):
     train_loss = make_loss_compute(model, fields["tgt"].vocab, opt)
@@ -240,9 +255,13 @@ def train_model(model, fields, optim, data_type, model_opt):
     norm_method = opt.normalization
     grad_accum_count = opt.accum_count
 
+    e2e_audio = onmt.io.E2EDataset.SimpleAudioShardIterator(
+        opt.audio_shard_dir)
+
     trainer = onmt.Trainer(model, train_loss, valid_loss, optim,
                            trunc_size, shard_size, data_type,
-                           norm_method, grad_accum_count)
+                           norm_method, grad_accum_count,
+                           e2e_audio=e2e_audio)
 
     print('\nStart training...')
     print(' * number of epochs: %d, starting from Epoch %d' %
@@ -257,7 +276,7 @@ def train_model(model, fields, optim, data_type, model_opt):
             lazily_load_dataset("train.main"), fields, opt)
         train_textonly_iter = make_dataset_iter(
             lazily_load_dataset("train.textonly"), fields, opt)
-        train_iter = interleave(
+        train_iter = Interleave(
             train_main_iter, train_textonly_iter, opt)
         train_stats = trainer.train(train_iter, epoch, report_func)
         print('Train perplexity: %g' % train_stats.ppl())
@@ -318,7 +337,7 @@ def lazily_load_dataset(corpus_type):
     Returns:
         A list of dataset, the dataset(s) are lazily loaded.
     """
-    assert corpus_type in ["train", "valid"]
+    assert corpus_type in ['train.main', 'train.textonly', 'valid']
 
     def lazy_dataset_loader(pt_file, corpus_type):
         dataset = torch.load(pt_file)
@@ -372,8 +391,8 @@ def collect_report_features(fields):
 
 def build_model(model_opt, opt, fields, checkpoint):
     print('Building model...')
-    model = onmt.ModelConstructor.make_base_model(model_opt, fields,
-                                                  use_gpu(opt), checkpoint)
+    model = onmt.ModelConstructor.make_e2e_model(model_opt, fields,
+                                                 use_gpu(opt), checkpoint)
     if len(opt.gpuid) > 1:
         print('Multi gpu training: ', opt.gpuid)
         model = nn.DataParallel(model, device_ids=opt.gpuid, dim=1)
@@ -482,7 +501,7 @@ def main():
 
     # Peek the fisrt dataset to determine the data_type.
     # (All datasets have the same data_type).
-    first_dataset = next(lazily_load_dataset("train"))
+    first_dataset = next(lazily_load_dataset("train.main"))
     data_type = first_dataset.data_type
 
     # Load fields generated from preprocess phase.

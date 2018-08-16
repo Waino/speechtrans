@@ -103,6 +103,10 @@ class E2EDataset(ONMTDatasetBase):
             init_token=BOS_WORD, eos_token=EOS_WORD,
             pad_token=PAD_WORD)
 
+        fields["shard_idx"] = torchtext.data.Field(
+            use_vocab=False, tensor_type=torch.LongTensor,
+            sequential=False)
+
         fields["feat_idx"] = torchtext.data.Field(
             use_vocab=False, tensor_type=torch.LongTensor,
             sequential=False)
@@ -110,6 +114,9 @@ class E2EDataset(ONMTDatasetBase):
         fields["indices"] = torchtext.data.Field(
             use_vocab=False, tensor_type=torch.LongTensor,
             sequential=False)
+
+        fields["task"] = torchtext.data.Field(
+            use_vocab=True, sequential=False)
 
         return fields
 
@@ -130,9 +137,11 @@ class SimpleShardedCorpusIterator(object):
         self.task = task
         self.use_chars = use_chars
         self.eof = False
+        self.current_shard = -1
         self.current_line = 0
 
     def __iter__(self):
+        self.current_shard += 1
         for _ in range(self.shard_size):
             line = self.corpus.readline()
             if line == '':
@@ -158,6 +167,7 @@ class SimpleShardedCorpusIterator(object):
             "indices": index,
             'task': self.task,
             'feat_idx': -1,
+            'shard_idx': self.current_shard,
         }
         assert not feats
 
@@ -171,7 +181,6 @@ class KeyedShardedCorpusIterator(object):
         try:
             # The codecs module seems to have bugs with seek()/tell(),
             # so we use io.open().
-            print('opening', corpus_path)
             self.corpus = io.open(corpus_path, "r", encoding="utf-8")
         except IOError:
             sys.stderr.write("Failed to open corpus file: %s" % corpus_path)
@@ -186,7 +195,7 @@ class KeyedShardedCorpusIterator(object):
         self.dirpath = pathlib.Path(key_corpus)
         self.num_shards = sum(1 for path in self.dirpath.iterdir()
             if path.is_file() and str(path).endswith('.txt'))
-        self.current_shard = 0
+        self.current_shard = -1
         self.current_line = 0
 
         # slurp in entire text corpus, index by key
@@ -202,12 +211,12 @@ class KeyedShardedCorpusIterator(object):
         self.corpus.close()
 
     def __iter__(self):
+        self.current_shard += 1
         for (i, key) in enumerate(self.get_shard(self.current_shard)):
             line = self.lines_by_key[key]
             yield self._example_dict_iter(line, self.current_line, i)
             self.current_line += 1
-        self.current_shard += 1
-        if self.current_shard >= self.num_shards:
+        if self.current_shard == self.num_shards - 1:
             self.eof = True
 
     def get_shard(self, shard_index):
@@ -231,7 +240,8 @@ class KeyedShardedCorpusIterator(object):
             self.side: words,
             "indices": index,
             'task': self.task,
-            'feat_idx': feat_idx
+            'feat_idx': feat_idx,
+            'shard_idx': self.current_shard,
         }
         assert not feats
 
@@ -244,6 +254,8 @@ class SimpleAudioShardIterator(object):
         self.dirpath = pathlib.Path(shard_dir_path)
         self.num_shards = sum(1 for path in self.dirpath.iterdir()
             if path.is_file() and str(path).endswith('.shard.npz'))
+        self._cache = None
+        self._cache_idx = None
 
     def __iter__(self):
         #range instead of directly iterating on the dir contents
@@ -256,21 +268,27 @@ class SimpleAudioShardIterator(object):
         filepath = self.dirpath / SimpleAudioShardIterator.shard_template.format(shardnum = shard_index)
         return np.load(filepath)
         
+    def get_minibatch_features(self, shard_index, example_indices):
+        if self._cache_idx != shard_index:
+            self._cache = self.get_shard(shard_index)
+        return self.pad_audio(self._cache["mfccs"][example_indices])
 
-def pad_audio(data, lengths):
-    # returns: padded numpy float array
-    # (minibatch_size, None, feat_len)
-    # -> (minibatch_size, max_len, feat_len)
-    max_len = max(arr.shape[0] for arr in data)
-    padded = np.zeros((len(data), max_len, data[0].shape[1]))
-    for i,arr in enumerate(data):
-        padded[i,:arr.shape[0],:] = arr
+    @staticmethod
+    def pad_audio(data):
+        lengths = [arr.shape[0] for arr in data]
+        # returns: padded numpy float array
+        # (minibatch_size, None, feat_len)
+        mb_size = len(data)
+        max_len = max(lengths)
+        n_feats = data[0].shape[1]
+        padded = np.zeros((mb_size, max_len, n_feats))
+        for i, arr in enumerate(data):
+            padded[i, :arr.shape[0], :] = arr
 
-    # returns: numpy float array with 0 if real value and 1 if padding
-    # (minibatch_size)
-    # -> (minibatch_size, max_len)
-    max_len = max(lengths)
-    masks = np.ones((len(lengths), max_len))
-    for i,length in enumerate(lengths):
-        masks[i,:length] = 0
-    return padded, masks 
+        # returns: numpy float array with 0 if real value and 1 if padding
+        # (minibatch_size)
+        # -> (minibatch_size, max_len)
+        masks = np.ones((mb_size, max_len))
+        for i, length in enumerate(lengths):
+            masks[i, :length] = 0
+        return padded, masks 

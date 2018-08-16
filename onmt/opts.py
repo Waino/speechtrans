@@ -479,8 +479,14 @@ def train_opts(parser):
 
     # e2e
     group = parser.add_argument_group('End-to-end speech translation')
+    group.add_argument('-audio_shard_dir', required=True,
+                       help="Path to the audio shard dir")
     group.add_argument('-task_mix_rate', type=float, default=0.5,
                        help='Probability of selecting a text-only task.')
+    group.add_argument('-las_layers', type=int, default=3,
+                       help='Number of pyramidal bi-LSTM layers in LAS encoder.')
+    group.add_argument('-audio_feature_size', type=int, default=13,
+                       help='Size of audio feature vector')
 
 
 def translate_opts(parser, use_ensemble=False):
