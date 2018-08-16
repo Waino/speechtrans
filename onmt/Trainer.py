@@ -165,8 +165,8 @@ class Trainer(object):
         for i, batch in enumerate(train_iter):
             cur_dataset = train_iter.get_cur_dataset()
             self.train_loss.cur_dataset = cur_dataset
-            if srlf.src_train_loss is not None:
-                srlf.src_train_loss.cur_dataset = cur_dataset
+            if self.src_train_loss is not None:
+                self.src_train_loss.cur_dataset = cur_dataset
 
             true_batchs.append(batch)
             accum += 1
@@ -300,10 +300,13 @@ class Trainer(object):
                 # absurd boilerplate because torchtext doesn't
                 # allow passing through non-numerical data
                 task = batch.dataset.fields['task'].vocab.itos[batch.task.data[0]]
-                shard_idx = batch.shard_idx.data[0]
-                feat_idx = batch.feat_idx.data
-                feats, feats_mask = self.e2e_audio.get_minibatch_features(
-                    shard_idx, feat_idx)
+                if task == 'text-only':
+                    feats, feats_mask = None, None
+                else:
+                    shard_idx = batch.shard_idx.data[0]
+                    feat_idx = batch.feat_idx.data
+                    feats, feats_mask = self.e2e_audio.get_minibatch_features(
+                        shard_idx, feat_idx)
                 assert not self.trunc_size
             else:
                 src_lengths = None

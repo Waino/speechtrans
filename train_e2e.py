@@ -61,23 +61,23 @@ if len(opt.gpuid) > 1:
     sys.stderr.write("Sorry, multigpu isn't supported yet, coming soon!\n")
     sys.exit(1)
 
-# Set up the Crayon logging server.
-if opt.exp_host != "":
-    from pycrayon import CrayonClient
-
-    cc = CrayonClient(hostname=opt.exp_host)
-
-    experiments = cc.get_experiment_names()
-    print(experiments)
-    if opt.exp in experiments:
-        cc.remove_experiment(opt.exp)
-    experiment = cc.create_experiment(opt.exp)
-
-if opt.tensorboard:
-    from tensorboardX import SummaryWriter
-    writer = SummaryWriter(
-        opt.tensorboard_log_dir + datetime.now().strftime("/%b-%d_%H-%M-%S"),
-        comment="Onmt")
+## Set up the Crayon logging server.
+#if opt.exp_host != "":
+#    from pycrayon import CrayonClient
+#
+#    cc = CrayonClient(hostname=opt.exp_host)
+#
+#    experiments = cc.get_experiment_names()
+#    print(experiments)
+#    if opt.exp in experiments:
+#        cc.remove_experiment(opt.exp)
+#    experiment = cc.create_experiment(opt.exp)
+#
+#if opt.tensorboard:
+#    from tensorboardX import SummaryWriter
+#    writer = SummaryWriter(
+#        opt.tensorboard_log_dir + datetime.now().strftime("/%b-%d_%H-%M-%S"),
+#        comment="Onmt")
 
 progress_step = 0
 

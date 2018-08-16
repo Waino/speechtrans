@@ -87,7 +87,9 @@ class E2EModel(nn.Module):
             inp = feats
             mask = feats_mask
         elif task == 'text-only':
-            assert feats is None
+            if feats is not None:
+                print(type(feats))
+            #assert feats is None
             encoder = self.src_txt_encoder
             inp = src
             padding_idx = self.src_txt_encoder.embeddings.word_padding_idx
@@ -98,7 +100,7 @@ class E2EModel(nn.Module):
 
         # exclude last timestep from inputs
         src_feed = src[:-1]
-        trg_feed = trg[:-1]
+        tgt_feed = tgt[:-1]
 
         # encode with appropriate encoder
         enc_final, memory_bank = encoder(inp, mask)
