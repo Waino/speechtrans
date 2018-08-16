@@ -12,6 +12,7 @@ from onmt.io.DatasetBase import UNK_WORD, PAD_WORD, BOS_WORD, EOS_WORD
 from onmt.io.TextDataset import TextDataset
 from onmt.io.ImageDataset import ImageDataset
 from onmt.io.AudioDataset import AudioDataset
+from onmt.io.E2EDataset import E2EDataset
 
 
 def _getstate(self):
@@ -46,6 +47,8 @@ def get_fields(data_type, n_src_features, n_tgt_features):
         return ImageDataset.get_fields(n_src_features, n_tgt_features)
     elif data_type == 'audio':
         return AudioDataset.get_fields(n_src_features, n_tgt_features)
+    elif data_type == 'e2e':
+        return E2EDataset.get_fields()
 
 
 def load_fields_from_vocab(vocab, data_type="text"):

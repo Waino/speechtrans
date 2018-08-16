@@ -240,8 +240,6 @@ def preprocess_e2e_opts(parser):
                        help="Path to the train_textonly source data")
     group.add_argument('-train_textonly_tgt', required=True,
                        help="Path to the train_textonly target data")
-    group.add_argument('-train_textonly_key', required=True,
-                       help="Path to the train_textonly key data")
     group.add_argument('-valid_src', required=True,
                        help="Path to the validation source data")
     group.add_argument('-valid_tgt', required=True,
@@ -312,17 +310,6 @@ def preprocess_e2e_opts(parser):
     group = parser.add_argument_group('Logging')
     group.add_argument('-report_every', type=int, default=100000,
                        help="Report status every this many sentences")
-
-    # Options most relevant to speech
-    group = parser.add_argument_group('Speech')
-    group.add_argument('-sample_rate', type=int, default=16000,
-                       help="Sample rate.")
-    group.add_argument('-window_size', type=float, default=.02,
-                       help="Window size for spectrogram in seconds.")
-    group.add_argument('-window_stride', type=float, default=.01,
-                       help="Window stride for spectrogram in seconds.")
-    group.add_argument('-window', default='hamming',
-                       help="Window type for spectrogram generation.")
 
 
 def train_opts(parser):

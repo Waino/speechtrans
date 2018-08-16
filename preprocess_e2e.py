@@ -88,14 +88,7 @@ def build_save_dataset(corpus_type, fields, opt):
     while not src_iter.hit_end():
         index += 1
         dataset = onmt.io.E2EDataset.E2EDataset(
-            fields,
-            src_iter,
-            tgt_iter,
-            src_iter.num_feats,
-            tgt_iter.num_feats,
-            src_seq_length=opt.src_seq_length,
-            tgt_seq_length=opt.tgt_seq_length,
-            dynamic_dict=opt.dynamic_dict)
+            fields, src_iter, tgt_iter)
 
         # We save fields in vocab.pt seperately, so make it empty.
         dataset.fields = []
@@ -111,7 +104,7 @@ def build_save_dataset(corpus_type, fields, opt):
 
 
 def build_save_vocab(train_dataset, fields, opt):
-    fields = onmt.io.build_vocab(train_dataset, fields, opt.data_type,
+    fields = onmt.io.build_vocab(train_dataset, fields, 'e2e',
                                  opt.share_vocab,
                                  opt.src_vocab,
                                  opt.src_vocab_size,
@@ -136,10 +129,10 @@ def main():
         # Reuse previously created vocabulary,
         # to enable finetuning a model with additional data
         fields = onmt.io.load_fields_from_vocab(
-            torch.load(opt.reuse_vocab, opt.data_type))
+            torch.load(opt.reuse_vocab, 'e2e'))
     else:
         print("Building `Fields` object...")
-        fields = onmt.io.get_fields(opt.data_type, src_nfeats, tgt_nfeats)
+        fields = onmt.io.get_fields('e2e', src_nfeats, tgt_nfeats)
 
     train_dataset_files = []
     print("Building & saving main training data...")

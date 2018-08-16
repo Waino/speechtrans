@@ -20,15 +20,15 @@ class E2EDataset(ONMTDatasetBase):
     """ Dataset for end-to-end speech translation """
     def __init__(self,
                  fields,
-                 src_audio_examples_iter,
                  src_text_examples_iter,
                  tgt_text_examples_iter):
         self.data_type = 'e2e'
+        self.n_src_feats = 0
+        self.n_tgt_feats = 0
 
-        examples_iter = (self._join_dicts(src_audio, src_text, tgt_text)
-                         for src_audio, src_text, tgt_text
-                         in zip(src_audio_examples_iter,
-                                src_text_examples_iter,
+        examples_iter = (self._join_dicts(src_text, tgt_text)
+                         for src_text, tgt_text
+                         in zip(src_text_examples_iter,
                                 tgt_text_examples_iter))
 
         # Peek at the first to see which fields are used.
@@ -39,8 +39,19 @@ class E2EDataset(ONMTDatasetBase):
                       for k in keys]
         example_values = ([ex[k] for k in keys] for ex in examples_iter)
 
+        src_size = 0
+        out_examples = []
+        for ex_values in example_values:
+            example = self._construct_example_fromlist(
+                ex_values, out_fields)
+            src_size += len(example.src)
+            out_examples.append(example)
+    
+        print("average src size", src_size / len(out_examples),
+              len(out_examples))
+
         filter_pred = lambda x: True
-        super(TextDataset, self).__init__(
+        super(E2EDataset, self).__init__(
             out_examples, out_fields, filter_pred
         )
 
@@ -80,7 +91,7 @@ class E2EDataset(ONMTDatasetBase):
         example_dict["src_audio_mask"] = lengths
         return example_dict
 
-        @staticmethod
+    @staticmethod
     def get_fields():
         fields = {}
 
@@ -135,7 +146,7 @@ class E2EDataset(ONMTDatasetBase):
 
 class SimpleShardedCorpusIterator(object):
     """Makes shards of exactly shard_size examples"""
-    def __init__(self, key_corpus, corpus_path, line_truncate, side, shard_size, use_chars=False):
+    def __init__(self, key_corpus, corpus_path, line_truncate, side, task, shard_size, use_chars=False):
         assert key_corpus is None
         try:
             # The codecs module seems to have bugs with seek()/tell(),
@@ -147,6 +158,7 @@ class SimpleShardedCorpusIterator(object):
         self.line_truncate = line_truncate
         self.side = side
         self.shard_size = shard_size
+        self.task = task
         self.use_chars = use_chars
         self.eof = False
 
@@ -170,7 +182,7 @@ class SimpleShardedCorpusIterator(object):
         if self.line_truncate:
             line = line[:self.line_truncate]
         words, feats, n_feats = TextDataset.extract_text_features(line)
-        example_dict = {self.side: words, "indices": index, 'task': 'text-only'}
+        example_dict = {self.side: words, "indices": index, 'task': self.task}
         assert not feats
 
         return example_dict
@@ -178,11 +190,12 @@ class SimpleShardedCorpusIterator(object):
 
 class KeyedShardedCorpusIterator(object):
     shard_template = "keys.{shardnum}.txt"
-    def __init__(self, key_corpus, corpus_path, line_truncate, side, shard_size, use_chars=False):
+    def __init__(self, key_corpus, corpus_path, line_truncate, side, task, shard_size, use_chars=False):
         assert key_corpus is not None
         try:
             # The codecs module seems to have bugs with seek()/tell(),
             # so we use io.open().
+            print('opening', corpus_path)
             self.corpus = io.open(corpus_path, "r", encoding="utf-8")
         except IOError:
             sys.stderr.write("Failed to open corpus file: %s" % corpus_path)
@@ -190,33 +203,39 @@ class KeyedShardedCorpusIterator(object):
         self.line_truncate = line_truncate
         self.side = side
         self.shard_size = shard_size
+        self.task = task
         self.use_chars = use_chars
         self.eof = False
 
         self.dirpath = pathlib.Path(key_corpus)
-        self.num_shards = len(path for path in self.dirpath.iterdir()
-            if path.is_file() and path.endswith('.txt'))
+        self.num_shards = sum(1 for path in self.dirpath.iterdir()
+            if path.is_file() and str(path).endswith('.txt'))
         self.current_shard = 0
         self.current_line = 0
 
+        self.lines_by_key = {}
+        for line in self.corpus:
+            try:
+                key, line = line.rstrip().split(' ', 1)
+            except ValueError:
+                # FIXME: blank lines!
+                key = line.strip()
+                line = 'NO_TEXT'
+            self.lines_by_key[key] = line
+        self.corpus.close()
+
     def __iter__(self):
         # slurp in entire text corpus, index by key
-        lines_by_key = {}
-        for line in self.corpus:
-            key, line = line.rstrip().split(' ', 1)
-            lines_by_key[key] = line
-        self.corpus.close()
-        if self.current_shard >= self.num_shards:
-            self.eof = True
-            raise StopIteration
-        for key in self.get_shard(i):
-            line = lines_by_key[key]
-            yield _example_dict_iter(line, self.current_line)
+        for key in self.get_shard(self.current_shard):
+            line = self.lines_by_key[key]
+            yield self._example_dict_iter(line, self.current_line)
             self.current_line += 1
         self.current_shard += 1
+        if self.current_shard >= self.num_shards:
+            self.eof = True
 
     def get_shard(self, shard_index):
-        filepath = self.dirpath / shard_template.format(shardnum = shard_index)
+        filepath = self.dirpath / KeyedShardedCorpusIterator.shard_template.format(shardnum = shard_index)
         with open(filepath, 'r') as fobj:
             for line in fobj:
                 yield line.strip()
@@ -232,7 +251,7 @@ class KeyedShardedCorpusIterator(object):
         if self.line_truncate:
             line = line[:self.line_truncate]
         words, feats, n_feats = TextDataset.extract_text_features(line)
-        example_dict = {self.side: words, "indices": index, 'task': 'main'}
+        example_dict = {self.side: words, "indices": index, 'task': self.task}
         assert not feats
 
         return example_dict
@@ -242,8 +261,8 @@ class SimpleAudioShardIterator(object):
     shard_template = "keys_mfccs.{shardnum}.shard.npz"
     def __init__(self, shard_dir_path):
         self.dirpath = pathlib.Path(shard_dir_path)
-        self.num_shards = len(path for path in self.dirpath.iterdir()
-            if path.is_file() and path.endswith('.shard.npz'))
+        self.num_shards = sum(1 for path in self.dirpath.iterdir()
+            if path.is_file() and str(path).endswith('.shard.npz'))
 
     def __iter__(self):
         #range instead of directly iterating on the dir contents
@@ -253,6 +272,6 @@ class SimpleAudioShardIterator(object):
             yield data["mfccs"]
 
     def get_shard(self, shard_index):
-        filepath = self.dirpath / shard_template.format(shardnum = shard_index)
+        filepath = self.dirpath / SimpleAudioShardIterator.shard_template.format(shardnum = shard_index)
         return np.load(filepath)
         
