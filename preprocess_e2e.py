@@ -86,7 +86,6 @@ def build_save_dataset(corpus_type, fields, opt):
 
     index = 0
     while not src_iter.hit_end():
-        index += 1
         dataset = onmt.io.E2EDataset.E2EDataset(
             fields, src_iter, tgt_iter)
 
@@ -99,6 +98,8 @@ def build_save_dataset(corpus_type, fields, opt):
         torch.save(dataset, pt_file)
 
         ret_list.append(pt_file)
+        # indexing starts at 0 FFS
+        index += 1
 
     return ret_list
 

@@ -303,7 +303,7 @@ def build_vocab(train_dataset_files, fields, data_type, share_vocab,
         _build_field_vocab(fields[key], counter[key])
         print(" * %s vocab size: %d." % (key, len(fields[key].vocab)))
 
-    if data_type == 'text':
+    if data_type in ('text', 'e2e'):
         _build_field_vocab(fields["src"], counter["src"],
                            max_size=src_vocab_size,
                            min_freq=src_words_min_frequency)
