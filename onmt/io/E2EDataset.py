@@ -5,6 +5,7 @@ from itertools import chain
 import io
 import codecs
 import sys
+import pathlib
 
 import torch
 import torchtext
@@ -13,7 +14,7 @@ from onmt.Utils import aeq
 from onmt.io.TextDataset import TextDataset
 from onmt.io.DatasetBase import (ONMTDatasetBase, UNK_WORD,
                                  PAD_WORD, BOS_WORD, EOS_WORD)
-
+import numpy as np
 
 class E2EDataset(ONMTDatasetBase):
     """ Dataset for end-to-end speech translation """
@@ -63,9 +64,23 @@ class E2EDataset(ONMTDatasetBase):
         """
         # where example_dicts have the keys:
         # src_audio, src_audio_mask
-        raise NotImplementedError() # FIXME Aku
+        raise NotImplementedError() # FIXME Aku NOTE: Not fixed but see next
 
     @staticmethod
+    def make_minibatch_from_shard(shard_data, indices):
+        """
+        shard_data is the data given by SimpleAudioShardIterator (see bottom of file)
+        basically shard_data = np.load(shardpath)["mfccs"]
+        indices determine what is picked to the current minibatch
+        """
+        example_dict = {}
+        arrays = np.array([shard_data[i] for i in indices])
+        lengths = np.array([arr.shape[0] for arr in arrays])
+        example_dict["src_audio"] = arrays
+        example_dict["src_audio_mask"] = lengths
+        return example_dict
+
+        @staticmethod
     def get_fields():
         fields = {}
 
@@ -82,11 +97,13 @@ class E2EDataset(ONMTDatasetBase):
             # was in src_audio in example_dicts
             # for each entry in the minibatch
             # returns: padded numpy float array
-
             # (minibatch_size, None, feat_len)
             # -> (minibatch_size, max_len, feat_len)
-            raise NotImplementedError() # FIXME Aku
-            
+            max_len = max(arr.shape[0] for arr in data)
+            padded = np.zeros((len(data), max_len, data[0].shape[1]))
+            for i,arr in enumerate(data):
+                padded[i,:arr.shape[0],:] = arr
+            return padded
 
         def make_audio_mask(data, vocab, is_train):
             # data: a sequence with one of whatever
@@ -94,9 +111,13 @@ class E2EDataset(ONMTDatasetBase):
             # for each entry in the minibatch
             # returns: numpy float array with 0 if real value and 1 if padding
 
-            # (minibatch_size, variable:lengths)
+            # (minibatch_size)
             # -> (minibatch_size, max_len)
-            raise NotImplementedError() # FIXME Aku
+            max_len = max(data)
+            masks = np.ones((len(data), max_len))
+            for i,length in enumerate(data):
+                masks[i,:length] = 0
+            return masks 
 
         fields["src_audio"] = torchtext.data.Field(
             use_vocab=False, tensor_type=torch.FloatTensor,
@@ -152,3 +173,23 @@ class SimpleShardedCorpusIterator(object):
         assert not feats
 
         return example_dict
+
+
+class SimpleAudioShardIterator(object):
+    shard_template = "keys_mfccs.{shardnum}.shard.npz"
+    def __init__(self, shard_dir_path):
+        self.dirpath = pathlib.Path(shard_dir_path)
+        self.num_shards = len(path for path in self.dirpath.iterdir()
+            if path.is_file() and path.endswith('.shard.npz'))
+
+    def __iter__(self):
+        #range instead of directly iterating on the dir contents
+        #so that we can go through them in correct order
+        for i in range(self.num_shards):
+            data = self.get_shard(i)
+            yield data["mfccs"]
+
+    def get_shard(self, shard_index):
+        filepath = self.dirpath / shard_template.format(shardnum = shard_index)
+        return np.load(filepath)
+        
