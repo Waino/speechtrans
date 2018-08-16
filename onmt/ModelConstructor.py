@@ -306,7 +306,6 @@ def make_e2e_model(model_opt, fields, gpu, checkpoint=None):
     """
 
     ### Make embeddings
-    print('make embeddings')
     src_dict = fields["src"].vocab
     feature_dicts = onmt.io.collect_feature_vocabs(fields, 'src')
     src_embeddings = make_embeddings(model_opt, src_dict,
@@ -319,7 +318,6 @@ def make_e2e_model(model_opt, fields, gpu, checkpoint=None):
 
     # Share the embedding matrix - preprocess with share_vocab required.
     if model_opt.share_embeddings:
-        print('share embeddings')
         # src/tgt vocab should be the same if `-share_vocab` is specified.
         if src_dict != tgt_dict:
             raise AssertionError('The `-share_vocab` should be set during '
@@ -329,33 +327,27 @@ def make_e2e_model(model_opt, fields, gpu, checkpoint=None):
 
     ### Make encoders.
     # source audio
-    print('make las encoder')
     src_aud_encoder = LasEncoder(model_opt.audio_feature_size,
                                  hidden_size=model_opt.rnn_size,
                                  rnn_type=model_opt.rnn_type,
                                  dropout=model_opt.dropout,
                                  num_layers=model_opt.las_layers)
     # source text
-    print('make src encoder')
     src_txt_encoder = make_encoder(model_opt, src_embeddings)
 
     ### Make decoders.
     # source text
-    print('make src decoder')
     src_txt_decoder = make_decoder(model_opt, src_embeddings)
     # target text
-    print('make tgt decoder')
     tgt_txt_decoder = make_decoder(model_opt, tgt_embeddings)
 
     # Make end-to-end speech translation model
-    print('make actual model')
     model = E2EModel(src_aud_encoder,
                      src_txt_encoder,
                      src_txt_decoder,
                      tgt_txt_decoder)
 
     # Make Generators.
-    print('make generators')
     src_generator = nn.Sequential(
         nn.Linear(model_opt.rnn_size, len(fields["src"].vocab)),
         nn.LogSoftmax(dim=-1))
@@ -408,7 +400,9 @@ def make_e2e_model(model_opt, fields, gpu, checkpoint=None):
 
     # Make the whole model leverage GPU if indicated to do so.
     if gpu:
+        print('moving model to gpu...')
         model.cuda()
+        print('...done')
     else:
         model.cpu()
 
