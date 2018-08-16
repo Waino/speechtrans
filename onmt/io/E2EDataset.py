@@ -103,40 +103,9 @@ class E2EDataset(ONMTDatasetBase):
             init_token=BOS_WORD, eos_token=EOS_WORD,
             pad_token=PAD_WORD)
 
-        def pad_audio(data, vocab, is_train):
-            # data: a sequence with one of whatever
-            # was in src_audio in example_dicts
-            # for each entry in the minibatch
-            # returns: padded numpy float array
-            # (minibatch_size, None, feat_len)
-            # -> (minibatch_size, max_len, feat_len)
-            max_len = max(arr.shape[0] for arr in data)
-            padded = np.zeros((len(data), max_len, data[0].shape[1]))
-            for i,arr in enumerate(data):
-                padded[i,:arr.shape[0],:] = arr
-            return padded
-
-        def make_audio_mask(data, vocab, is_train):
-            # data: a sequence with one of whatever
-            # was in src_audio_mask in example_dicts
-            # for each entry in the minibatch
-            # returns: numpy float array with 0 if real value and 1 if padding
-
-            # (minibatch_size)
-            # -> (minibatch_size, max_len)
-            max_len = max(data)
-            masks = np.ones((len(data), max_len))
-            for i,length in enumerate(data):
-                masks[i,:length] = 0
-            return masks 
-
-        fields["src_audio"] = torchtext.data.Field(
-            use_vocab=False, tensor_type=torch.FloatTensor,
-            postprocessing=pad_audio, sequential=False)
-
-        fields["src_audio_mask"] = torchtext.data.Field(
-            use_vocab=False, tensor_type=torch.FloatTensor,
-            postprocessing=make_audio_mask, sequential=False)
+        fields["feat_idx"] = torchtext.data.Field(
+            use_vocab=False, tensor_type=torch.LongTensor,
+            sequential=False)
 
         fields["indices"] = torchtext.data.Field(
             use_vocab=False, tensor_type=torch.LongTensor,
@@ -161,15 +130,17 @@ class SimpleShardedCorpusIterator(object):
         self.task = task
         self.use_chars = use_chars
         self.eof = False
+        self.current_line = 0
 
     def __iter__(self):
-        for i in range(self.shard_size):
+        for _ in range(self.shard_size):
             line = self.corpus.readline()
             if line == '':
                 self.eof = True
                 self.corpus.close()
                 raise StopIteration
-            yield self._example_dict_iter(line, i)
+            yield self._example_dict_iter(line, self.current_line)
+            self.current_line += 1
 
     def hit_end(self):
         return self.eof
@@ -182,7 +153,12 @@ class SimpleShardedCorpusIterator(object):
         if self.line_truncate:
             line = line[:self.line_truncate]
         words, feats, n_feats = TextDataset.extract_text_features(line)
-        example_dict = {self.side: words, "indices": index, 'task': self.task}
+        example_dict = {
+            self.side: words,
+            "indices": index,
+            'task': self.task,
+            'feat_idx': -1,
+        }
         assert not feats
 
         return example_dict
@@ -213,6 +189,7 @@ class KeyedShardedCorpusIterator(object):
         self.current_shard = 0
         self.current_line = 0
 
+        # slurp in entire text corpus, index by key
         self.lines_by_key = {}
         for line in self.corpus:
             try:
@@ -225,10 +202,9 @@ class KeyedShardedCorpusIterator(object):
         self.corpus.close()
 
     def __iter__(self):
-        # slurp in entire text corpus, index by key
-        for key in self.get_shard(self.current_shard):
+        for (i, key) in enumerate(self.get_shard(self.current_shard)):
             line = self.lines_by_key[key]
-            yield self._example_dict_iter(line, self.current_line)
+            yield self._example_dict_iter(line, self.current_line, i)
             self.current_line += 1
         self.current_shard += 1
         if self.current_shard >= self.num_shards:
@@ -243,7 +219,7 @@ class KeyedShardedCorpusIterator(object):
     def hit_end(self):
         return self.eof
 
-    def _example_dict_iter(self, line, index):
+    def _example_dict_iter(self, line, index, feat_idx):
         if self.use_chars:
             line = list(line)
         else:
@@ -251,7 +227,12 @@ class KeyedShardedCorpusIterator(object):
         if self.line_truncate:
             line = line[:self.line_truncate]
         words, feats, n_feats = TextDataset.extract_text_features(line)
-        example_dict = {self.side: words, "indices": index, 'task': self.task}
+        example_dict = {
+            self.side: words,
+            "indices": index,
+            'task': self.task,
+            'feat_idx': feat_idx
+        }
         assert not feats
 
         return example_dict
@@ -275,3 +256,21 @@ class SimpleAudioShardIterator(object):
         filepath = self.dirpath / SimpleAudioShardIterator.shard_template.format(shardnum = shard_index)
         return np.load(filepath)
         
+
+def pad_audio(data, lengths):
+    # returns: padded numpy float array
+    # (minibatch_size, None, feat_len)
+    # -> (minibatch_size, max_len, feat_len)
+    max_len = max(arr.shape[0] for arr in data)
+    padded = np.zeros((len(data), max_len, data[0].shape[1]))
+    for i,arr in enumerate(data):
+        padded[i,:arr.shape[0],:] = arr
+
+    # returns: numpy float array with 0 if real value and 1 if padding
+    # (minibatch_size)
+    # -> (minibatch_size, max_len)
+    max_len = max(lengths)
+    masks = np.ones((len(lengths), max_len))
+    for i,length in enumerate(lengths):
+        masks[i,:length] = 0
+    return padded, masks 
