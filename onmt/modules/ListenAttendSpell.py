@@ -32,6 +32,7 @@ class pBLSTMLayer(nn.Module):
         timestep = input_x.size(1)
         feature_size = input_x.size(2)
         # Reduce time resolution
+        assert timestep % 2 == 0
         input_x = input_x.contiguous().view(batch_size,
                                             int(timestep/2),
                                             feature_size*2)
@@ -58,17 +59,18 @@ class LasEncoder(EncoderBase):
                                            hidden_size,
                                            rnn_type=rnn_type,
                                            dropout=dropout))
-        self.modules = nn.ModuleList(modules)
+        self.las_modules = nn.ModuleList(modules)
         self.num_layers = num_layers
 
-    def forward(self, input, lengths=None, hidden=None):
+    def forward(self, input, src_pad_mask=None, hidden=None):
         """ See :obj:`EncoderBase.forward()`"""
-        self._check_args(input, lengths, hidden)
+        self._check_args(input, None, hidden)
 
         out = input
         for i in range(self.num_layers):
-            out, hidden = self.modules[i](out)
-        return hidden, out
+            out, hidden = self.las_modules[i](out)
+        # out is transposed to (timestep, batch, feats)
+        return hidden, out.transpose(0, 1)
 
 
 class E2EModel(nn.Module):
@@ -86,6 +88,8 @@ class E2EModel(nn.Module):
             encoder = self.src_aud_encoder
             inp = feats
             mask = feats_mask
+            print('audio inp', inp.size())
+            print('audio mask', mask.size())
         elif task == 'text-only':
             if feats is not None:
                 print(type(feats))
@@ -94,25 +98,49 @@ class E2EModel(nn.Module):
             inp = src
             padding_idx = self.src_txt_encoder.embeddings.word_padding_idx
             mask = src.data.eq(padding_idx)
+            print('text inp', inp.size())
+            print('text mask', mask.size())
         #elif task = 'asr':
         else:
             raise Exception('Unknown task "{}"'.format(task))
 
+        print('src', src.size())
+        print('trg', src.size())
         # exclude last timestep from inputs
         src_feed = src[:-1]
         tgt_feed = tgt[:-1]
 
         # encode with appropriate encoder
         enc_final, memory_bank = encoder(inp, mask)
+        if task == 'main':
+            # the audio feature timestep has been reduced,
+            # so the padding mask is no longer valid
+            print('before', mask.size())
+            mask_type = type(mask.data)
+            mask = Variable(mask_type(
+                memory_bank.size(0), memory_bank.size(1)).zero_())
+            print('after', mask.size())
+        else:
+            mask = mask.transpose(0, 1)
 
         # decode to src
         enc_state = self.src_txt_decoder.init_decoder_state(
             mask, memory_bank, enc_final)
+        print('*** to src')
+        print('src_feed', src_feed.size())
+        print('memory_bank', memory_bank.size())
+        print('enc_state.mask', enc_state.mask.size())
+        print('mask', mask.size())
         # (decoder_outputs, dec_state, attns)
         src_txt_decoder_out = self.src_txt_decoder(
             src_feed, memory_bank, enc_state,
             mask=mask)
 
+        print('*** to tgt')
+        print('src_feed', src_feed.size())
+        print('memory_bank', memory_bank.size())
+        print('enc_state.mask', enc_state.mask.size())
+        print('mask', mask.size())
         # decode to tgt
         enc_state = self.tgt_txt_decoder.init_decoder_state(
             mask, memory_bank, enc_final)

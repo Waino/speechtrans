@@ -261,7 +261,9 @@ def train_model(model, fields, optim, data_type, model_opt):
                            norm_method,
                            grad_accum_count,
                            e2e_audio=e2e_audio,
-                           src_train_loss=src_train_loss)
+                           src_train_loss=src_train_loss,
+                           las_layers=model_opt.las_layers,
+                           cuda=use_gpu(opt))
 
     print('\nStart training...')
     print(' * number of epochs: %d, starting from Epoch %d' %

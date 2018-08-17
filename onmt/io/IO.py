@@ -141,6 +141,8 @@ def make_features(batch, side, data_type='text'):
 
     if data_type == 'text':
         return torch.cat([level.unsqueeze(2) for level in levels], 2)
+    elif data_type == 'e2e':
+        return levels[0].unsqueeze(2)
     else:
         return levels[0]
 

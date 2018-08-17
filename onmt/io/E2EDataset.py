@@ -268,18 +268,21 @@ class SimpleAudioShardIterator(object):
         filepath = self.dirpath / SimpleAudioShardIterator.shard_template.format(shardnum = shard_index)
         return np.load(filepath)
         
-    def get_minibatch_features(self, shard_index, example_indices):
+    def get_minibatch_features(self, shard_index, example_indices, las_layers):
         if self._cache_idx != shard_index:
             self._cache = self.get_shard(shard_index)
-        return self.pad_audio(self._cache["mfccs"][example_indices])
+        return self.pad_audio(self._cache["mfccs"][example_indices], las_layers)
 
     @staticmethod
-    def pad_audio(data):
+    def pad_audio(data, las_layers):
         lengths = [arr.shape[0] for arr in data]
+        time_reduction_ratio = 2 ** las_layers
         # returns: padded numpy float array
         # (minibatch_size, None, feat_len)
         mb_size = len(data)
         max_len = max(lengths)
+        # LAS encoder requires time resolution to be power of 2
+        max_len = int(time_reduction_ratio * np.ceil(max_len / time_reduction_ratio))
         n_feats = data[0].shape[1]
         padded = np.zeros((mb_size, max_len, n_feats))
         for i, arr in enumerate(data):

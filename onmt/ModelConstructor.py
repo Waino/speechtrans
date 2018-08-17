@@ -327,8 +327,10 @@ def make_e2e_model(model_opt, fields, gpu, checkpoint=None):
 
     ### Make encoders.
     # source audio
+    # LasEncoder is bidirectional, so output is twice the hidden size
+    assert model_opt.rnn_size % 2 == 0
     src_aud_encoder = LasEncoder(model_opt.audio_feature_size,
-                                 hidden_size=model_opt.rnn_size,
+                                 hidden_size=int(model_opt.rnn_size / 2),
                                  rnn_type=model_opt.rnn_type,
                                  dropout=model_opt.dropout,
                                  num_layers=model_opt.las_layers)

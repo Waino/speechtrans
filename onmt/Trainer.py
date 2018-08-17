@@ -14,6 +14,7 @@ import sys
 import math
 import torch
 import torch.nn as nn
+from torch.autograd import Variable
 
 import onmt
 import onmt.io
@@ -113,7 +114,7 @@ class Trainer(object):
     def __init__(self, model, train_loss, valid_loss, optim,
                  trunc_size=0, shard_size=32, data_type='text',
                  norm_method="sents", grad_accum_count=1,
-                 e2e_audio=None, src_train_loss=None):
+                 e2e_audio=None, src_train_loss=None, las_layers=3, cuda=True):
         # Basic attributes.
         self.model = model
         self.train_loss = train_loss
@@ -127,6 +128,8 @@ class Trainer(object):
         self.grad_accum_count = grad_accum_count
         self.progress_step = 0
         self.e2e_audio = e2e_audio
+        self.las_layers = las_layers
+        self.cuda = cuda
 
         assert(grad_accum_count > 0)
         if grad_accum_count > 1:
@@ -306,7 +309,14 @@ class Trainer(object):
                     shard_idx = batch.shard_idx.data[0]
                     feat_idx = batch.feat_idx.data
                     feats, feats_mask = self.e2e_audio.get_minibatch_features(
-                        shard_idx, feat_idx)
+                        shard_idx, feat_idx, self.las_layers)
+                    feats = Variable(torch.FloatTensor(feats),
+                                     requires_grad=False)
+                    feats_mask = Variable(torch.FloatTensor(feats_mask),
+                                          requires_grad=False)
+                    if self.cuda:
+                        feats = feats.cuda()
+                        feats_mask = feats_mask.cuda()
                 assert not self.trunc_size
             else:
                 src_lengths = None
