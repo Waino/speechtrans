@@ -88,8 +88,6 @@ class E2EModel(nn.Module):
             encoder = self.src_aud_encoder
             inp = feats
             mask = feats_mask
-            print('audio inp', inp.size())
-            print('audio mask', mask.size())
         elif task == 'text-only':
             if feats is not None:
                 print(type(feats))
@@ -98,14 +96,10 @@ class E2EModel(nn.Module):
             inp = src
             padding_idx = self.src_txt_encoder.embeddings.word_padding_idx
             mask = src.data.eq(padding_idx)
-            print('text inp', inp.size())
-            print('text mask', mask.size())
         #elif task = 'asr':
         else:
             raise Exception('Unknown task "{}"'.format(task))
 
-        print('src', src.size())
-        print('trg', src.size())
         # exclude last timestep from inputs
         src_feed = src[:-1]
         tgt_feed = tgt[:-1]
@@ -115,11 +109,9 @@ class E2EModel(nn.Module):
         if task == 'main':
             # the audio feature timestep has been reduced,
             # so the padding mask is no longer valid
-            print('before', mask.size())
             mask_type = type(mask.data)
             mask = Variable(mask_type(
                 memory_bank.size(0), memory_bank.size(1)).zero_())
-            print('after', mask.size())
         else:
             mask = mask.transpose(0, 1)
         mask = mask.byte()
@@ -127,21 +119,11 @@ class E2EModel(nn.Module):
         # decode to src
         enc_state = self.src_txt_decoder.init_decoder_state(
             mask, memory_bank, enc_final)
-        print('*** to src')
-        print('src_feed', src_feed.size())
-        print('memory_bank', memory_bank.size())
-        print('enc_state.mask', enc_state.mask.size())
-        print('mask', mask.size())
         # (decoder_outputs, dec_state, attns)
         src_txt_decoder_out = self.src_txt_decoder(
             src_feed, memory_bank, enc_state,
             mask=mask)
 
-        print('*** to tgt')
-        print('src_feed', src_feed.size())
-        print('memory_bank', memory_bank.size())
-        print('enc_state.mask', enc_state.mask.size())
-        print('mask', mask.size())
         # decode to tgt
         enc_state = self.tgt_txt_decoder.init_decoder_state(
             mask, memory_bank, enc_final)

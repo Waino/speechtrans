@@ -551,11 +551,8 @@ class E2ETrainer(Trainer):
                             task=task)
 
             # 3. Compute loss in shards for memory efficiency.
-            print('batch.src', batch.src[0].size())
-            print('batch.tgt', batch.tgt.size())
             # src side
             outputs, attns, dec_state = src_txt_decoder_out
-            print('outputs', outputs.size())
             batch_stats = self.src_train_loss.just_compute_loss(
                     batch, outputs)
 

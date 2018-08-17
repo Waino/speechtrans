@@ -229,8 +229,6 @@ class E2ELossCompute(NMTLossCompute):
         else:
             target = batch.tgt
         target = target[:-1]
-        print(self.side, 'output', output.size())
-        print(self.side, 'target', target.size())
         _, batch_stats = self._compute_loss(None, output, target)
         return batch_stats
 
