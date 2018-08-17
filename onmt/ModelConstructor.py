@@ -130,25 +130,27 @@ def make_encoder(opt, embeddings):
                           opt.bridge)
 
 
-def make_decoder(opt, embeddings):
+def make_decoder(opt, embeddings, layers=None):
     """
     Various decoder dispatcher function.
     Args:
         opt: the option in current environment.
         embeddings (Embeddings): vocab embeddings for this decoder.
     """
+    if layers is None:
+        layers = opt.dec_layers
     if opt.decoder_type == "transformer":
-        return TransformerDecoder(opt.dec_layers, opt.rnn_size,
+        return TransformerDecoder(layers, opt.rnn_size,
                                   opt.global_attention, opt.copy_attn,
                                   opt.dropout, embeddings)
     elif opt.decoder_type == "cnn":
-        return CNNDecoder(opt.dec_layers, opt.rnn_size,
+        return CNNDecoder(layers, opt.rnn_size,
                           opt.global_attention, opt.copy_attn,
                           opt.cnn_kernel_width, opt.dropout,
                           embeddings)
     elif opt.input_feed:
         return InputFeedRNNDecoder(opt.rnn_type, opt.brnn,
-                                   opt.dec_layers, opt.rnn_size,
+                                   layers, opt.rnn_size,
                                    opt.global_attention,
                                    opt.coverage_attn,
                                    opt.context_gate,
@@ -158,7 +160,7 @@ def make_decoder(opt, embeddings):
                                    opt.reuse_copy_attn)
     else:
         return StdRNNDecoder(opt.rnn_type, opt.brnn,
-                             opt.dec_layers, opt.rnn_size,
+                             layers, opt.rnn_size,
                              opt.global_attention,
                              opt.coverage_attn,
                              opt.context_gate,
@@ -339,7 +341,8 @@ def make_e2e_model(model_opt, fields, gpu, checkpoint=None):
 
     ### Make decoders.
     # source text
-    src_txt_decoder = make_decoder(model_opt, src_embeddings)
+    src_txt_decoder = make_decoder(model_opt, src_embeddings,
+                                   layers=model_opt.src_decoder_layers)
     # target text
     tgt_txt_decoder = make_decoder(model_opt, tgt_embeddings)
 

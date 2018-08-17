@@ -348,7 +348,7 @@ class E2ETrainer(Trainer):
     def __init__(self, model, src_train_loss, tgt_train_loss, valid_loss, optim,
                  trunc_size=0, shard_size=32, data_type='text',
                  norm_method="sents", grad_accum_count=1,
-                 e2e_audio=None, las_layers=3, cuda=True):
+                 e2e_audio=None, las_layers=3, cuda=True, truncate_feat=None):
         # Basic attributes.
         self.model = model
         self.src_train_loss = src_train_loss
@@ -364,6 +364,7 @@ class E2ETrainer(Trainer):
         self.e2e_audio = e2e_audio
         self.las_layers = las_layers
         self.cuda = cuda
+        self.truncate_feat = truncate_feat
 
         assert(self.trunc_size == 0)
         assert(grad_accum_count > 0)
@@ -464,7 +465,8 @@ class E2ETrainer(Trainer):
                 shard_idx = batch.shard_idx.data[0]
                 feat_idx = batch.feat_idx.data
                 feats, feats_mask = self.e2e_audio.get_minibatch_features(
-                    shard_idx, feat_idx, self.las_layers)
+                    shard_idx, feat_idx, self.las_layers,
+                    truncate=self.truncate_feat)
                 feats = Variable(torch.FloatTensor(feats),
                                     requires_grad=False)
                 feats_mask = Variable(torch.FloatTensor(feats_mask),
@@ -553,7 +555,8 @@ class E2ETrainer(Trainer):
                 shard_idx = batch.shard_idx.data[0]
                 feat_idx = batch.feat_idx.data
                 feats, feats_mask = self.e2e_audio.get_minibatch_features(
-                    shard_idx, feat_idx, self.las_layers)
+                    shard_idx, feat_idx, self.las_layers,
+                    truncate=self.truncate_feat)
                 feats = Variable(torch.FloatTensor(feats),
                                     requires_grad=False)
                 feats_mask = Variable(torch.FloatTensor(feats_mask),
