@@ -221,21 +221,31 @@ class Interleave(object):
         self.main_iter = iter(main_iter)
         self.textonly_iter = iter(textonly_iter)
         self.cur_dataset = None
+        self.tot_textonly = 0
+        self.tot_main = 0
 
     def __iter__(self):
         while True:
             # until either iterator runs out (likely to be main_iter)
             if np.random.random_sample() < opt.task_mix_rate:
                 self.cur_dataset = self.textonly.get_cur_dataset()
-                print('Text-only task')
+                self.tot_textonly += 1
                 yield next(self.textonly_iter)
             else:
-                print('Main task')
+                self.tot_main += 1
                 self.cur_dataset = self.main.get_cur_dataset()
                 yield next(self.main_iter)
 
     def get_cur_dataset(self):
         return self.cur_dataset
+
+    def report(self):
+        if (self.tot_main + self.tot_textonly) == 0:
+            return
+        print('{} ({}%) main, {} text-only'.format(
+            self.tot_main,
+            100 * (self.tot_main / (self.tot_main + self.tot_textonly)),
+            self.tot_textonly))
 
 def train_model(model, fields, optim, data_type, model_opt):
     src_train_loss = make_loss_compute(model, fields["src"].vocab, opt, side='src')
@@ -283,6 +293,7 @@ def train_model(model, fields, optim, data_type, model_opt):
         train_stats = trainer.train(train_iter, epoch, report_func)
         print('Train perplexity: %g' % train_stats.ppl())
         print('Train accuracy: %g' % train_stats.accuracy())
+        train_iter.report()
 
         # 2. Validate on the validation set.
         valid_iter = make_dataset_iter(lazily_load_dataset("valid"),
