@@ -452,19 +452,39 @@ class E2ETrainer(Trainer):
             self.valid_loss.cur_dataset = cur_dataset
 
             src = onmt.io.make_features(batch, 'src', self.data_type)
-            if self.data_type == 'text':
-                _, src_lengths = batch.src
-            else:
-                src_lengths = None
-
+            _, src_lengths = batch.src
             tgt = onmt.io.make_features(batch, 'tgt')
 
+            # absurd boilerplate because torchtext doesn't
+            # allow passing through non-numerical data
+            task = batch.dataset.fields['task'].vocab.itos[batch.task.data[0]]
+            if task == 'text-only':
+                feats, feats_mask = None, None
+            else:
+                shard_idx = batch.shard_idx.data[0]
+                feat_idx = batch.feat_idx.data
+                feats, feats_mask = self.e2e_audio.get_minibatch_features(
+                    shard_idx, feat_idx, self.las_layers)
+                feats = Variable(torch.FloatTensor(feats),
+                                    requires_grad=False)
+                feats_mask = Variable(torch.FloatTensor(feats_mask),
+                                        requires_grad=False)
+                if self.cuda:
+                    feats = feats.cuda()
+                    feats_mask = feats_mask.cuda()
+
             # F-prop through the model.
-            outputs, attns, _ = self.model(src, tgt, src_lengths)
+            # FIXME: flag to disable src decoder
+            # each is a (outputs, attns, dec_state) tuple
+            src_txt_decoder_out, tgt_txt_decoder_out = \
+                self.model(feats, feats_mask,
+                            src, tgt,
+                            task=task)
+            outputs, attns, dec_state = tgt_txt_decoder_out
 
             # Compute loss.
-            batch_stats = self.valid_loss.monolithic_compute_loss(
-                    batch, outputs, attns)
+            batch_stats = self.tgt_train_loss.just_compute_loss(
+                    batch, outputs)
 
             # Update statistics.
             stats.update(batch_stats)
@@ -489,17 +509,22 @@ class E2ETrainer(Trainer):
         real_model = (self.model.module
                       if isinstance(self.model, nn.DataParallel)
                       else self.model)
-        real_generator = (real_model.generator.module
-                          if isinstance(real_model.generator, nn.DataParallel)
-                          else real_model.generator)
+        real_src_generator = (real_model.src_generator.module
+                          if isinstance(real_model.src_generator, nn.DataParallel)
+                          else real_model.src_generator)
+        real_tgt_generator = (real_model.tgt_generator.module
+                          if isinstance(real_model.tgt_generator, nn.DataParallel)
+                          else real_model.tgt_generator)
 
         model_state_dict = real_model.state_dict()
         model_state_dict = {k: v for k, v in model_state_dict.items()
                             if 'generator' not in k}
-        generator_state_dict = real_generator.state_dict()
+        src_generator_state_dict = real_src_generator.state_dict()
+        tgt_generator_state_dict = real_tgt_generator.state_dict()
         checkpoint = {
             'model': model_state_dict,
-            'generator': generator_state_dict,
+            'src_generator': src_generator_state_dict,
+            'tgt_generator': tgt_generator_state_dict,
             'vocab': onmt.io.save_fields_to_vocab(fields),
             'opt': opt,
             'epoch': epoch,
