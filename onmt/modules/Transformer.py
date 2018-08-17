@@ -111,8 +111,6 @@ class TransformerEncoder(EncoderBase):
 
     def forward(self, input, src_pad_mask, hidden=None):
         """ See :obj:`EncoderBase.forward()`"""
-        print('type', type(input))
-        print('shape', input.size())
         self._check_args(input, None, hidden)
 
         emb = self.embeddings(input)
@@ -171,7 +169,6 @@ class TransformerDecoderLayer(nn.Module):
     def forward(self, inputs, memory_bank, src_pad_mask, tgt_pad_mask,
                 previous_input=None):
         # Args Checks
-        print('inputs', inputs.size())
         input_batch, input_len, _ = inputs.size()
         if previous_input is not None:
             pi_batch, _, _ = previous_input.size()
@@ -182,7 +179,7 @@ class TransformerDecoderLayer(nn.Module):
         src_batch, t_len, s_len = src_pad_mask.size()
         tgt_batch, t_len_, t_len__ = tgt_pad_mask.size()
         aeq(input_batch, contxt_batch, src_batch, tgt_batch)
-        aeq(t_len, t_len_, t_len__, input_len)
+        # aeq(t_len, t_len_, t_len__, input_len)
         aeq(s_len, contxt_len)
         # END Args Checks
 
@@ -191,21 +188,14 @@ class TransformerDecoderLayer(nn.Module):
                                       :tgt_pad_mask.size(1)], 0)
         input_norm = self.layer_norm_1(inputs)
         all_input = input_norm
-        print('before concat all_input', all_input.size())
         if previous_input is not None:
-            print('concatenating previous_input', previous_input.size())
-            print('concatenating input_norm', input_norm.size())
             all_input = torch.cat((previous_input, input_norm), dim=1)
-            print('concatenated all_input', all_input.size())
             dec_mask = None
         query, attn = self.self_attn(all_input, all_input, input_norm,
                                      mask=dec_mask)
         query = self.drop(query) + inputs
 
         query_norm = self.layer_norm_2(query)
-        print('at attention memory_bank', memory_bank.size())
-        print('at attention query_norm', query_norm.size())
-        print('at attention src_pad_mask', src_pad_mask.size())
         mid, attn = self.context_attn(memory_bank, memory_bank, query_norm,
                                       mask=src_pad_mask.data)
         output = self.feed_forward(self.drop(mid) + query)
@@ -288,10 +278,6 @@ class TransformerDecoder(nn.Module):
         """
         # CHECKS
         assert isinstance(state, TransformerDecoderState)
-        print('tgt', tgt.size())
-        print('memory_bank', memory_bank.size())
-        if mask is not None:
-            print('mask', mask.size())
         tgt_len, tgt_batch, _ = tgt.size()
         memory_len, memory_batch, _ = memory_bank.size()
         aeq(tgt_batch, memory_batch)
@@ -303,9 +289,6 @@ class TransformerDecoder(nn.Module):
         tgt_batch, tgt_len = tgt_words.size()
         aeq(tgt_batch, memory_batch, src_batch, tgt_batch)
         aeq(memory_len, src_len)
-        print('src_len', src_len)
-        print('tgt_len', tgt_len)
-        print('memory_len', memory_len)
 
         if state.previous_input is not None:
             tgt = torch.cat([state.previous_input, tgt], 0)
@@ -337,12 +320,6 @@ class TransformerDecoder(nn.Module):
             prev_layer_input = None
             if state.previous_input is not None:
                 prev_layer_input = state.previous_layer_inputs[i]
-            print(i, 'output', output.size())
-            print(i, 'src_memory_bank', src_memory_bank.size())
-            print(i, 'src_pad_mask', src_pad_mask.size())
-            print(i, 'tgt_pad_mask', tgt_pad_mask.size())
-            if prev_layer_input is not None:
-                print(i, 'prev_layer_input', prev_layer_input.size())
             output, attn, all_input \
                 = self.transformer_layers[i](output, src_memory_bank,
                                              src_pad_mask, tgt_pad_mask,

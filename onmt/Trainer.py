@@ -113,12 +113,10 @@ class Trainer(object):
 
     def __init__(self, model, train_loss, valid_loss, optim,
                  trunc_size=0, shard_size=32, data_type='text',
-                 norm_method="sents", grad_accum_count=1,
-                 e2e_audio=None, src_train_loss=None, las_layers=3, cuda=True):
+                 norm_method="sents", grad_accum_count=1):
         # Basic attributes.
         self.model = model
         self.train_loss = train_loss
-        self.src_train_loss = src_train_loss
         self.valid_loss = valid_loss
         self.optim = optim
         self.trunc_size = trunc_size
@@ -127,9 +125,6 @@ class Trainer(object):
         self.norm_method = norm_method
         self.grad_accum_count = grad_accum_count
         self.progress_step = 0
-        self.e2e_audio = e2e_audio
-        self.las_layers = las_layers
-        self.cuda = cuda
 
         assert(grad_accum_count > 0)
         if grad_accum_count > 1:
@@ -161,15 +156,13 @@ class Trainer(object):
             if len(train_iter) % self.grad_accum_count > 0:
                 add_on += 1
             num_batches = len(train_iter) / self.grad_accum_count + add_on
-        except (TypeError, NotImplementedError):
+        except NotImplementedError:
             # Dynamic batching
             num_batches = -1
 
         for i, batch in enumerate(train_iter):
             cur_dataset = train_iter.get_cur_dataset()
             self.train_loss.cur_dataset = cur_dataset
-            if self.src_train_loss is not None:
-                self.src_train_loss.cur_dataset = cur_dataset
 
             true_batchs.append(batch)
             accum += 1
@@ -310,54 +303,19 @@ class Trainer(object):
                 # 2. F-prop all but generator.
                 if self.grad_accum_count == 1:
                     self.model.zero_grad()
-                if self.data_type == 'e2e':
-                    # each is a (outputs, attns, dec_state) tuple
-                    src_txt_decoder_out, tgt_txt_decoder_out = \
-                        self.model(feats, feats_mask,
-                                   src, tgt,
-                                   task=task)
-                else:
-                    outputs, attns, dec_state = \
-                        self.model(src, tgt, src_lengths, dec_state)
+                outputs, attns, dec_state = \
+                    self.model(src, tgt, src_lengths, dec_state)
 
                 # 3. Compute loss in shards for memory efficiency.
-                if self.data_type == 'e2e':
-                    print('batch.src', batch.src[0].size())
-                    print('batch.tgt', batch.tgt.size())
-                    # src side
-                    outputs, attns, dec_state = src_txt_decoder_out
-                    print('outputs', outputs.size())
-                    batch_stats = self.train_loss.sharded_compute_loss(
-                            batch, outputs, attns, j,
-                            trunc_size, self.shard_size, normalization)
+                batch_stats = self.train_loss.sharded_compute_loss(
+                        batch, outputs, attns, j,
+                        trunc_size, self.shard_size, normalization)
 
-                    # 4. Update the parameters and statistics.
-                    if self.grad_accum_count == 1:
-                        self.optim.step()
-                    total_stats.update(batch_stats)
-                    report_stats.update(batch_stats)
-
-                    # tgt side
-                    outputs, attns, dec_state = tgt_txt_decoder_out
-                    batch_stats = self.train_loss.sharded_compute_loss(
-                            batch, outputs, attns, j,
-                            trunc_size, self.shard_size, normalization)
-
-                    # 4. Update the parameters and statistics.
-                    if self.grad_accum_count == 1:
-                        self.optim.step()
-                    total_stats.update(batch_stats)
-                    report_stats.update(batch_stats)
-                else:
-                    batch_stats = self.train_loss.sharded_compute_loss(
-                            batch, outputs, attns, j,
-                            trunc_size, self.shard_size, normalization)
-
-                    # 4. Update the parameters and statistics.
-                    if self.grad_accum_count == 1:
-                        self.optim.step()
-                    total_stats.update(batch_stats)
-                    report_stats.update(batch_stats)
+                # 4. Update the parameters and statistics.
+                if self.grad_accum_count == 1:
+                    self.optim.step()
+                total_stats.update(batch_stats)
+                report_stats.update(batch_stats)
 
                 # If truncated, don't backprop fully.
                 if dec_state is not None:
