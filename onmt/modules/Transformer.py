@@ -207,7 +207,7 @@ class TransformerDecoderLayer(nn.Module):
         print('at attention query_norm', query_norm.size())
         print('at attention src_pad_mask', src_pad_mask.size())
         mid, attn = self.context_attn(memory_bank, memory_bank, query_norm,
-                                      mask=src_pad_mask.data.byte())
+                                      mask=src_pad_mask.data)
         output = self.feed_forward(self.drop(mid) + query)
 
         # CHECKS

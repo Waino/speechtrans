@@ -122,6 +122,7 @@ class E2EModel(nn.Module):
             print('after', mask.size())
         else:
             mask = mask.transpose(0, 1)
+        mask = mask.byte()
 
         # decode to src
         enc_state = self.src_txt_decoder.init_decoder_state(

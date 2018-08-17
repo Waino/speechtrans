@@ -191,6 +191,8 @@ class NMTLossCompute(LossComputeBase):
         if self.confidence < 1:
             tdata = gtruth.data
             mask = torch.nonzero(tdata.eq(self.padding_idx)).squeeze()
+            print('scores.data', type(scores.data), scores.data.size())
+            print('tdata', type(tdata), tdata.size())
             log_likelihood = torch.gather(scores.data, 1, tdata.unsqueeze(1))
             tmp_ = self.one_hot.repeat(gtruth.size(0), 1)
             tmp_.scatter_(1, tdata.unsqueeze(1), self.confidence)
@@ -216,7 +218,10 @@ class E2ELossCompute(NMTLossCompute):
         super().__init__(*args, **kwargs)
 
     def _make_shard_state(self, batch, output, range_, attns=None):
-        target = batch.__getattr__(self.side)
+        if self.side == 'src':
+            target, _ = batch.src[1:]
+        else:
+            target = batch.tgt
         return {
             "output": output,
             "target": target[range_[0] + 1: range_[1]],
