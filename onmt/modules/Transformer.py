@@ -197,7 +197,7 @@ class TransformerDecoderLayer(nn.Module):
 
         query_norm = self.layer_norm_2(query)
         mid, attn = self.context_attn(memory_bank, memory_bank, query_norm,
-                                      mask=src_pad_mask.data)
+                                      mask=src_pad_mask)
         output = self.feed_forward(self.drop(mid) + query)
 
         # CHECKS

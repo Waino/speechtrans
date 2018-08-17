@@ -89,13 +89,11 @@ class E2EModel(nn.Module):
             inp = feats
             mask = feats_mask
         elif task == 'text-only':
-            if feats is not None:
-                print(type(feats))
-            #assert feats is None
+            assert feats is None
             encoder = self.src_txt_encoder
             inp = src
             padding_idx = self.src_txt_encoder.embeddings.word_padding_idx
-            mask = src.data.eq(padding_idx)
+            mask = src.data.eq(padding_idx).squeeze(2)
         #elif task = 'asr':
         else:
             raise Exception('Unknown task "{}"'.format(task))
@@ -110,10 +108,8 @@ class E2EModel(nn.Module):
             # the audio feature timestep has been reduced,
             # so the padding mask is no longer valid
             mask_type = type(mask.data)
-            mask = Variable(mask_type(
-                memory_bank.size(0), memory_bank.size(1)).zero_())
-        else:
-            mask = mask.transpose(0, 1)
+            mask = mask_type(
+                memory_bank.size(0), memory_bank.size(1)).zero_()
         mask = mask.byte()
 
         # decode to src
