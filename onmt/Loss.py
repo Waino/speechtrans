@@ -215,15 +215,24 @@ class E2ELossCompute(NMTLossCompute):
         self.side = side
         super().__init__(*args, **kwargs)
 
-    def _make_shard_state(self, batch, output, range_, attns=None):
+    def monolithic_compute_loss(self, batch, output, attns):
+        raise Exception('call just_compute_loss instead')
+
+    def sharded_compute_loss(self, batch, output, attns,
+                             cur_trunc, trunc_size, shard_size,
+                             normalization):
+        raise Exception('call just_compute_loss instead')
+
+    def just_compute_loss(self, batch, output):
         if self.side == 'src':
-            target, _ = batch.src[1:]
+            target, _ = batch.src
         else:
             target = batch.tgt
-        return {
-            "output": output,
-            "target": target[range_[0] + 1: range_[1]],
-        }
+        target = target[:-1]
+        print(self.side, 'output', output.size())
+        print(self.side, 'target', target.size())
+        _, batch_stats = self._compute_loss(None, output, target)
+        return batch_stats
 
 
 class TypeWeightingLossCompute(NMTLossCompute):

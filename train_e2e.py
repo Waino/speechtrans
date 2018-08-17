@@ -251,7 +251,8 @@ def train_model(model, fields, optim, data_type, model_opt):
     e2e_audio = onmt.io.E2EDataset.SimpleAudioShardIterator(
         opt.audio_shard_dir)
 
-    trainer = onmt.Trainer(model,
+    trainer = onmt.E2ETrainer(model,
+                           src_train_loss,
                            tgt_train_loss,
                            valid_loss,
                            optim,
@@ -261,7 +262,6 @@ def train_model(model, fields, optim, data_type, model_opt):
                            norm_method,
                            grad_accum_count,
                            e2e_audio=e2e_audio,
-                           src_train_loss=src_train_loss,
                            las_layers=model_opt.las_layers,
                            cuda=use_gpu(opt))
 

@@ -325,7 +325,7 @@ class Trainer(object):
             self.optim.step()
 
 
-class E2ETrainer(object):
+class E2ETrainer(Trainer):
     """
     Class that controls the training process.
 
@@ -345,14 +345,14 @@ class E2ETrainer(object):
             grad_accum_count(int): accumulate gradients this many times.
     """
 
-    def __init__(self, model, train_loss, valid_loss, optim,
+    def __init__(self, model, src_train_loss, tgt_train_loss, valid_loss, optim,
                  trunc_size=0, shard_size=32, data_type='text',
                  norm_method="sents", grad_accum_count=1,
-                 e2e_audio=None, src_train_loss=None, las_layers=3, cuda=True):
+                 e2e_audio=None, las_layers=3, cuda=True):
         # Basic attributes.
         self.model = model
-        self.train_loss = train_loss
         self.src_train_loss = src_train_loss
+        self.tgt_train_loss = tgt_train_loss
         self.valid_loss = valid_loss
         self.optim = optim
         self.trunc_size = trunc_size
@@ -365,11 +365,8 @@ class E2ETrainer(object):
         self.las_layers = las_layers
         self.cuda = cuda
 
+        assert(self.trunc_size == 0)
         assert(grad_accum_count > 0)
-        if grad_accum_count > 1:
-            assert(self.trunc_size == 0), \
-                """To enable accumulated gradients,
-                   you must disable target sequence truncating."""
 
         # Set model in training mode.
         self.model.train()
@@ -401,15 +398,14 @@ class E2ETrainer(object):
 
         for i, batch in enumerate(train_iter):
             cur_dataset = train_iter.get_cur_dataset()
-            self.train_loss.cur_dataset = cur_dataset
-            if self.src_train_loss is not None:
-                self.src_train_loss.cur_dataset = cur_dataset
+            self.src_train_loss.cur_dataset = cur_dataset
+            self.tgt_train_loss.cur_dataset = cur_dataset
 
             true_batchs.append(batch)
             accum += 1
             if self.norm_method == "tokens":
                 num_tokens = batch.tgt[1:].data.view(-1) \
-                    .ne(self.train_loss.padding_idx).sum()
+                    .ne(self.tgt_train_loss.padding_idx).sum()
                 normalization += num_tokens
             else:
                 normalization += batch.batch_size
@@ -520,103 +516,63 @@ class E2ETrainer(object):
             self.model.zero_grad()
 
         for batch in true_batchs:
-            # FIXME: mismatch when decoding to src
-            target_size = batch.tgt.size(0)
-            # Truncated BPTT
-            if self.trunc_size:
-                trunc_size = self.trunc_size
-            else:
-                trunc_size = target_size
-
             dec_state = None
             src = onmt.io.make_features(batch, 'src', self.data_type)
-            if self.data_type == 'text':
-                _, src_lengths = batch.src
-                report_stats.n_src_words += src_lengths.sum()
-            elif self.data_type == 'e2e':
-                src_lengths = None
-                # absurd boilerplate because torchtext doesn't
-                # allow passing through non-numerical data
-                task = batch.dataset.fields['task'].vocab.itos[batch.task.data[0]]
-                if task == 'text-only':
-                    feats, feats_mask = None, None
-                else:
-                    shard_idx = batch.shard_idx.data[0]
-                    feat_idx = batch.feat_idx.data
-                    feats, feats_mask = self.e2e_audio.get_minibatch_features(
-                        shard_idx, feat_idx, self.las_layers)
-                    feats = Variable(torch.FloatTensor(feats),
-                                     requires_grad=False)
-                    feats_mask = Variable(torch.FloatTensor(feats_mask),
-                                          requires_grad=False)
-                    if self.cuda:
-                        feats = feats.cuda()
-                        feats_mask = feats_mask.cuda()
-                assert not self.trunc_size
+            src_lengths = None
+            # absurd boilerplate because torchtext doesn't
+            # allow passing through non-numerical data
+            task = batch.dataset.fields['task'].vocab.itos[batch.task.data[0]]
+            if task == 'text-only':
+                feats, feats_mask = None, None
             else:
-                src_lengths = None
+                shard_idx = batch.shard_idx.data[0]
+                feat_idx = batch.feat_idx.data
+                feats, feats_mask = self.e2e_audio.get_minibatch_features(
+                    shard_idx, feat_idx, self.las_layers)
+                feats = Variable(torch.FloatTensor(feats),
+                                    requires_grad=False)
+                feats_mask = Variable(torch.FloatTensor(feats_mask),
+                                        requires_grad=False)
+                if self.cuda:
+                    feats = feats.cuda()
+                    feats_mask = feats_mask.cuda()
+            assert not self.trunc_size
 
-            tgt_outer = onmt.io.make_features(batch, 'tgt')
+            src = onmt.io.make_features(batch, 'src')
+            tgt = onmt.io.make_features(batch, 'tgt')
 
-            for j in range(0, target_size-1, trunc_size):
-                # 1. Create truncated target.
-                tgt = tgt_outer[j: j + trunc_size]
+            # 2. F-prop all but generator.
+            if self.grad_accum_count == 1:
+                self.model.zero_grad()
+            # each is a (outputs, attns, dec_state) tuple
+            src_txt_decoder_out, tgt_txt_decoder_out = \
+                self.model(feats, feats_mask,
+                            src, tgt,
+                            task=task)
 
-                # 2. F-prop all but generator.
-                if self.grad_accum_count == 1:
-                    self.model.zero_grad()
-                if self.data_type == 'e2e':
-                    # each is a (outputs, attns, dec_state) tuple
-                    src_txt_decoder_out, tgt_txt_decoder_out = \
-                        self.model(feats, feats_mask,
-                                   src, tgt,
-                                   task=task)
-                else:
-                    outputs, attns, dec_state = \
-                        self.model(src, tgt, src_lengths, dec_state)
+            # 3. Compute loss in shards for memory efficiency.
+            print('batch.src', batch.src[0].size())
+            print('batch.tgt', batch.tgt.size())
+            # src side
+            outputs, attns, dec_state = src_txt_decoder_out
+            print('outputs', outputs.size())
+            batch_stats = self.src_train_loss.just_compute_loss(
+                    batch, outputs)
 
-                # 3. Compute loss in shards for memory efficiency.
-                if self.data_type == 'e2e':
-                    print('batch.src', batch.src[0].size())
-                    print('batch.tgt', batch.tgt.size())
-                    # src side
-                    outputs, attns, dec_state = src_txt_decoder_out
-                    print('outputs', outputs.size())
-                    batch_stats = self.train_loss.sharded_compute_loss(
-                            batch, outputs, attns, j,
-                            trunc_size, self.shard_size, normalization)
+            # 4. Update the parameters and statistics.
+            total_stats.update(batch_stats)
+            report_stats.update(batch_stats)
 
-                    # 4. Update the parameters and statistics.
-                    if self.grad_accum_count == 1:
-                        self.optim.step()
-                    total_stats.update(batch_stats)
-                    report_stats.update(batch_stats)
+            # tgt side
+            outputs, attns, dec_state = tgt_txt_decoder_out
+            batch_stats = self.tgt_train_loss.just_compute_loss(
+                    batch, outputs)
 
-                    # tgt side
-                    outputs, attns, dec_state = tgt_txt_decoder_out
-                    batch_stats = self.train_loss.sharded_compute_loss(
-                            batch, outputs, attns, j,
-                            trunc_size, self.shard_size, normalization)
-
-                    # 4. Update the parameters and statistics.
-                    if self.grad_accum_count == 1:
-                        self.optim.step()
-                    total_stats.update(batch_stats)
-                    report_stats.update(batch_stats)
-                else:
-                    batch_stats = self.train_loss.sharded_compute_loss(
-                            batch, outputs, attns, j,
-                            trunc_size, self.shard_size, normalization)
-
-                    # 4. Update the parameters and statistics.
-                    if self.grad_accum_count == 1:
-                        self.optim.step()
-                    total_stats.update(batch_stats)
-                    report_stats.update(batch_stats)
-
-                # If truncated, don't backprop fully.
-                if dec_state is not None:
-                    dec_state.detach()
+            # 4. Update the parameters and statistics.
+            if self.grad_accum_count == 1:
+                self.optim.step()
+            total_stats.update(batch_stats)
+            report_stats.update(batch_stats)
 
         if self.grad_accum_count > 1:
             self.optim.step()
