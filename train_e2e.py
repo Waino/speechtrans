@@ -330,15 +330,31 @@ def check_save_model_path():
 def tally_parameters(model):
     n_params = sum([p.nelement() for p in model.parameters()])
     print('* number of parameters: %d' % n_params)
-    enc = 0
-    dec = 0
+    aud_enc = 0
+    txt_enc = 0
+    src_dec = 0
+    tgt_dec = 0
+    src_gen = 0
+    tgt_gen = 0
     for name, param in model.named_parameters():
-        if 'encoder' in name:
-            enc += param.nelement()
-        elif 'decoder' or 'generator' in name:
-            dec += param.nelement()
-    print('encoder: ', enc)
-    print('decoder: ', dec)
+        if 'aud_encoder' in name:
+            aud_enc += param.nelement()
+        elif 'txt_encoder' in name:
+            txt_enc += param.nelement()
+        elif 'src_txt_decoder' in name:
+            src_dec += param.nelement()
+        elif 'tgt_txt_decoder' in name:
+            tgt_dec += param.nelement()
+        elif 'src_generator' in name:
+            src_gen += param.nelement()
+        elif 'tgt_generator' in name:
+            tgt_gen += param.nelement()
+    print('aud_encoder:   ', aud_enc)
+    print('txt_encoder:   ', txt_enc)
+    print('src_decoder:   ', src_dec)
+    print('tgt_decoder:   ', tgt_dec)
+    print('src_generator: ', src_gen)
+    print('tgt_generator: ', tgt_gen)
 
 
 def lazily_load_dataset(corpus_type):
