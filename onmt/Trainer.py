@@ -368,6 +368,9 @@ class E2ETrainer(Trainer):
 
         assert(self.trunc_size == 0)
         assert(grad_accum_count > 0)
+        if self.truncate_feat is not None:
+            time_reduction_ratio = 2 ** self.las_layers
+            assert self.truncate_feat % time_reduction_ratio == 0
 
         # Set model in training mode.
         self.model.train()
