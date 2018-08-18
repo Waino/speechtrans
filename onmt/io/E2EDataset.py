@@ -203,6 +203,8 @@ class KeyedShardedCorpusIterator(object):
         for line in self.corpus:
             try:
                 key, line = line.rstrip().split(' ', 1)
+                if self.line_truncate:
+                    line = line[:self.line_truncate]
             except ValueError:
                 # FIXME: blank lines!
                 key = line.strip()
