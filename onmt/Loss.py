@@ -223,13 +223,16 @@ class E2ELossCompute(NMTLossCompute):
                              normalization):
         raise Exception('call just_compute_loss instead')
 
-    def just_compute_loss(self, batch, output):
+    def just_compute_loss(self, batch, output, bp=True):
         if self.side == 'src':
             target, _ = batch.src
         else:
             target = batch.tgt
         target = target[:-1]
-        _, batch_stats = self._compute_loss(None, output, target)
+        loss, batch_stats = self._compute_loss(None, output, target)
+        if bp:
+            #loss.div(normalization).backward()
+            loss.backward()
         return batch_stats
 
 

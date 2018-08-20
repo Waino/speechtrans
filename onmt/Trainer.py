@@ -489,7 +489,7 @@ class E2ETrainer(Trainer):
 
             # Compute loss.
             batch_stats = self.tgt_train_loss.just_compute_loss(
-                    batch, outputs)
+                    batch, outputs, bp=False)
 
             # Update statistics.
             stats.update(batch_stats)
@@ -585,11 +585,7 @@ class E2ETrainer(Trainer):
             # src side
             outputs, attns, dec_state = src_txt_decoder_out
             batch_stats = self.src_train_loss.just_compute_loss(
-                    batch, outputs)
-
-            # 4. Update the parameters and statistics.
-            total_stats.update(batch_stats)
-            report_stats.update(batch_stats)
+                    batch, outputs, bp=False)
 
             # tgt side
             outputs, attns, dec_state = tgt_txt_decoder_out
