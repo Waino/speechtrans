@@ -183,10 +183,16 @@ def load_test_model(opt, dummy_opt, model_path=None):
         if arg not in model_opt:
             model_opt.__dict__[arg] = dummy_opt[arg]
 
-    model = make_base_model(model_opt, fields,
-                            use_gpu(opt), checkpoint)
+    if opt.data_type == 'e2e':
+        model = make_e2e_model(model_opt, fields,
+                               use_gpu(opt), checkpoint)
+        model.src_generator.eval()
+        model.tgt_generator.eval()
+    else:
+        model = make_base_model(model_opt, fields,
+                                use_gpu(opt), checkpoint)
+        model.generator.eval()
     model.eval()
-    model.generator.eval()
     return fields, model, model_opt
 
 

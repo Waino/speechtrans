@@ -6,12 +6,14 @@ import math
 
 from torch.autograd import Variable
 from itertools import count
+import itertools
 
 import onmt.ModelConstructor
 import onmt.translate.Beam
 import onmt.io
 import onmt.opts
 import onmt.modules.Ensemble
+from onmt.io.E2EDataset import SimpleAudioShardIterator
 
 
 def make_e2e_translator(opt, report_score=True, out_file=None, use_ensemble=False):
@@ -42,7 +44,7 @@ def make_e2e_translator(opt, report_score=True, out_file=None, use_ensemble=Fals
               for k in ["beam_size", "n_best", "max_length", "min_length",
                         "stepwise_penalty", "block_ngram_repeat",
                         "ignore_when_blocking", "dump_beam",
-                        "data_type", "replace_unk", "gpu", "verbose"]}
+                        "data_type", "gpu", "verbose", "las_layers"]}
 
     translator = E2ETranslator(model, fields, global_scorer=scorer,
                             out_file=out_file, report_score=report_score,
@@ -85,13 +87,15 @@ class E2ETranslator(object):
                  report_score=True,
                  verbose=False,
                  out_file=None,
-                 side='tgt'):
+                 side='tgt',
+                 las_layers=None):
         self.gpu = gpu
         self.cuda = gpu > -1
 
         self.model = model
         self.fields = fields
         self.n_best = n_best
+        assert n_best == 1
         self.max_length = max_length
         self.global_scorer = global_scorer
         self.beam_size = beam_size
@@ -106,6 +110,7 @@ class E2ETranslator(object):
         self.report_score = report_score
         assert side in ('src', 'tgt')
         self.side = side
+        self.las_layers = las_layers
 
         # for debugging
         self.beam_trace = self.dump_beam != ""
@@ -117,8 +122,7 @@ class E2ETranslator(object):
                 "scores": [],
                 "log_probs": []}
 
-    def translate(self, src_dir, src_path, tgt_path,
-                  batch_size, attn_debug=False):
+    def translate(self, src_path, tgt_path, batch_size):
         # no dataset to build: just divide audio into minibatches
 
         # Statistics
@@ -128,29 +132,33 @@ class E2ETranslator(object):
 
         vocab = self.fields[self.side].vocab
 
-        all_scores = []
-        for batch in data_iter:
-            batch_data = self.translate_batch(batch, feats, feats_mask, vocab)
-            translations = self.from_batch(batch_data, vocab)
+        shard_iter = SimpleAudioShardIterator(src_path)
 
-            for trans in translations:
-                pass
+        for shard in shard_iter:
+            while True:
+                batch = list(itertools.islice(shard, 0, batch_size))
+                if len(batch) == 0:
+                    continue
+                feats, feats_mask = SimpleAudioShardIterator.pad_audio(batch, self.las_layers)
+                batch_data = self.translate_batch(feats, feats_mask, vocab, batch_size)
+                translations = self.from_batch(batch_data, vocab)
 
-    def translate_batch(self, batch, feats, feats_mask, vocab):
+                for trans in translations:
+                    pass
+
+    def translate_batch(self, feats, feats_mask, vocab, batch_size):
         """
         Translate a batch of sentences.
 
         Mostly a wrapper around :obj:`Beam`.
 
         Args:
-           batch (:obj:`Batch`): a batch
 
         """
 
         # (0) Prep each of the components of the search.
         # And helper method for reducing verbosity.
         beam_size = self.beam_size
-        batch_size = batch.batch_size
         data_type = 'e2e'
 
         # Define a list of tokens to exclude from ngram-blocking
@@ -235,7 +243,6 @@ class E2ETranslator(object):
         # (4) Extract sentences from beam.
         ret = self._from_beam(beam)
         ret["gold_score"] = [0] * batch_size
-        ret["batch"] = batch
         return ret
 
     def _from_beam(self, beam):
@@ -256,38 +263,11 @@ class E2ETranslator(object):
         return ret
 
     def from_batch(self, translation_batch, vocab):
-        batch = translation_batch["batch"]
-        batch_size = batch.batch_size
-
-        preds, pred_score, attn, indices = list(zip(
-            *sorted(zip(translation_batch["predictions"],
-                        translation_batch["scores"],
-                        translation_batch["attention"],
-                        batch.indices.data),
-                    key=lambda x: x[-1])))
-
-        # Sorting
-        inds, perm = torch.sort(batch.indices.data)
-        src = batch.src[0].data.index_select(1, perm)
-        tgt = batch.tgt.data.index_select(1, perm)
-
         translations = []
-        for b in range(batch_size):
-            #src_vocab = self.data.src_vocabs[inds[b]] \
-            #    if self.data.src_vocabs else None
-            #src_raw = self.data.examples[inds[b]].src
-            #pred_sents = [self._build_target_tokens(
-            #    src[:, b] if src is not None else None,
-            #    src_vocab, src_raw,
-            #    preds[b][n], attn[b][n])
-            #              for n in range(self.n_best)]
-
-            #translation = Translation(src[:, b] if src is not None else None,
-            #                          src_raw, pred_sents,
-            #                          attn[b], pred_score[b])
+        for toks in translation_batch["predictions"]:
             tokens = []
-            for tok in preds[b][0]:
+            for tok in toks:
                 tokens.append(vocab.itos[tok])
-                translations.append(tokens)
+            translations.append(tokens)
 
         return translations

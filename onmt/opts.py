@@ -599,6 +599,16 @@ def translate_opts(parser, use_ensemble=False):
     group.add_argument('-window', default='hamming',
                        help='Window type for spectrogram generation')
 
+    # e2e
+    group = parser.add_argument_group('End-to-end speech translation')
+    group.add_argument('-las_layers', type=int, default=3,
+                       help='Number of pyramidal bi-LSTM layers in LAS encoder.')
+    group.add_argument('-src_decoder_layers', type=int, default=2,
+                       help='Number of layers in source side decoder')
+    group.add_argument('-audio_feature_size', type=int, default=13,
+                       help='Size of audio feature vector')
+    group.add_argument('-truncate_feat', type=int, default=None,
+                       help='Truncate length of audio feature.')
 
 def add_md_help_argument(parser):
     parser.add_argument('-md', action=MarkdownHelpAction,
