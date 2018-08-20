@@ -140,6 +140,13 @@ class E2ETranslator(object):
                 if len(batch) == 0:
                     continue
                 feats, feats_mask = SimpleAudioShardIterator.pad_audio(batch, self.las_layers)
+                feats = Variable(torch.FloatTensor(feats),
+                                    requires_grad=False)
+                feats_mask = Variable(torch.FloatTensor(feats_mask),
+                                        requires_grad=False)
+                if self.cuda:
+                    feats = feats.cuda()
+                    feats_mask = feats_mask.cuda()
                 batch_data = self.translate_batch(feats, feats_mask, vocab, batch_size)
                 translations = self.from_batch(batch_data, vocab)
 
@@ -183,6 +190,8 @@ class E2ETranslator(object):
 
         def rvar(a): return var(a.repeat(1, beam_size, 1))
 
+        def rmask(a): return var(a.repeat(1, beam_size))
+
         def bottle(m):
             return m.view(batch_size * beam_size, -1)
 
@@ -195,8 +204,10 @@ class E2ETranslator(object):
 
         if self.side == 'src':
             decoder = self.model.src_txt_decoder
+            generator = self.model.src_generator
         else:
             decoder = self.model.tgt_txt_decoder
+            generator = self.model.tgt_generator
 
         dec_states = decoder.init_decoder_state(
             feats_mask, memory_bank, enc_states)
@@ -206,8 +217,14 @@ class E2ETranslator(object):
             memory_bank = tuple(rvar(x.data) for x in memory_bank)
         else:
             memory_bank = rvar(memory_bank.data)
-        feats_mask = feats_mask.repeat(beam_size)
         dec_states.repeat_beam_size_times(beam_size)
+        # the audio feature timestep has been reduced,
+        # so the padding mask is no longer valid
+        feats_mask = torch.ByteTensor(
+            memory_bank.size(0), memory_bank.size(1)).zero_()
+        if self.cuda:
+            feats_mask = feats_mask.cuda()
+
 
         # (3) run the decoder to generate sentences, using beam search.
         for i in range(self.max_length):
@@ -230,7 +247,7 @@ class E2ETranslator(object):
             # dec_out: beam x rnn_size
 
             # (b) Compute a vector of batch x beam word scores.
-            out = self.model.generator.forward(dec_out).data
+            out = generator.forward(dec_out).data
             out = unbottle(out)
             # beam x tgt_vocab
             beam_attn = unbottle(attn["std"])
@@ -266,7 +283,7 @@ class E2ETranslator(object):
         translations = []
         for toks in translation_batch["predictions"]:
             tokens = []
-            for tok in toks:
+            for tok in toks[0]:
                 tokens.append(vocab.itos[tok])
             translations.append(tokens)
 
