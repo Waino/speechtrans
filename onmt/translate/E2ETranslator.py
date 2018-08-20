@@ -126,15 +126,17 @@ class E2ETranslator(object):
         pred_score_total, pred_words_total = 0, 0
         gold_score_total, gold_words_total = 0, 0
 
+        vocab = self.fields[self.side].vocab
+
         all_scores = []
         for batch in data_iter:
-            batch_data = self.translate_batch(batch)
-            translations = self.from_batch(batch_data)
+            batch_data = self.translate_batch(batch, feats, feats_mask, vocab)
+            translations = self.from_batch(batch_data, vocab)
 
             for trans in translations:
                 pass
 
-    def translate_batch(self, batch):
+    def translate_batch(self, batch, feats, feats_mask, vocab):
         """
         Translate a batch of sentences.
 
@@ -150,7 +152,6 @@ class E2ETranslator(object):
         beam_size = self.beam_size
         batch_size = batch.batch_size
         data_type = 'e2e'
-        vocab = self.fields[self.side].vocab
 
         # Define a list of tokens to exclude from ngram-blocking
         # exclusion_list = ["<t>", "</t>", "."]
@@ -185,19 +186,19 @@ class E2ETranslator(object):
         enc_states, memory_bank = self.model.src_aud_encoder(feats, feats_mask)
 
         if self.side == 'src':
-            decoder = self.src_txt_decoder
+            decoder = self.model.src_txt_decoder
         else:
-            decoder = self.tgt_txt_decoder
+            decoder = self.model.tgt_txt_decoder
 
         dec_states = decoder.init_decoder_state(
-            src, memory_bank, enc_states)
+            feats_mask, memory_bank, enc_states)
 
         # (2) Repeat src objects `beam_size` times.
         if isinstance(memory_bank, tuple):
             memory_bank = tuple(rvar(x.data) for x in memory_bank)
         else:
             memory_bank = rvar(memory_bank.data)
-        mask = mask.repeat(beam_size)
+        feats_mask = feats_mask.repeat(beam_size)
         dec_states.repeat_beam_size_times(beam_size)
 
         # (3) run the decoder to generate sentences, using beam search.
@@ -216,7 +217,7 @@ class E2ETranslator(object):
 
             # Run one step.
             dec_out, dec_states, attn = decoder(
-                inp, memory_bank, dec_states, mask=mask)
+                inp, memory_bank, dec_states, mask=feats_mask)
             dec_out = dec_out.squeeze(0)
             # dec_out: beam x rnn_size
 
@@ -227,9 +228,8 @@ class E2ETranslator(object):
             beam_attn = unbottle(attn["std"])
             # (c) Advance each beam.
             for j, b in enumerate(beam):
-                # FIXME memory_lengths
                 b.advance(out[:, j],
-                          beam_attn.data[:, j, :memory_lengths[j]])
+                          beam_attn.data[:, j, :])
                 dec_states.beam_update(j, b.get_current_origin(), beam_size)
 
         # (4) Extract sentences from beam.
@@ -254,3 +254,40 @@ class E2ETranslator(object):
             ret["scores"].append(scores)
             ret["attention"].append(attn)
         return ret
+
+    def from_batch(self, translation_batch, vocab):
+        batch = translation_batch["batch"]
+        batch_size = batch.batch_size
+
+        preds, pred_score, attn, indices = list(zip(
+            *sorted(zip(translation_batch["predictions"],
+                        translation_batch["scores"],
+                        translation_batch["attention"],
+                        batch.indices.data),
+                    key=lambda x: x[-1])))
+
+        # Sorting
+        inds, perm = torch.sort(batch.indices.data)
+        src = batch.src[0].data.index_select(1, perm)
+        tgt = batch.tgt.data.index_select(1, perm)
+
+        translations = []
+        for b in range(batch_size):
+            #src_vocab = self.data.src_vocabs[inds[b]] \
+            #    if self.data.src_vocabs else None
+            #src_raw = self.data.examples[inds[b]].src
+            #pred_sents = [self._build_target_tokens(
+            #    src[:, b] if src is not None else None,
+            #    src_vocab, src_raw,
+            #    preds[b][n], attn[b][n])
+            #              for n in range(self.n_best)]
+
+            #translation = Translation(src[:, b] if src is not None else None,
+            #                          src_raw, pred_sents,
+            #                          attn[b], pred_score[b])
+            tokens = []
+            for tok in preds[b][0]:
+                tokens.append(vocab.itos[tok])
+                translations.append(tokens)
+
+        return translations
