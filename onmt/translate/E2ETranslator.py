@@ -40,15 +40,17 @@ def make_e2e_translator(opt, report_score=True, out_file=None, use_ensemble=Fals
                                              opt.coverage_penalty,
                                              opt.length_penalty)
 
+    side = 'src' if opt.asr else 'tgt'
+
     kwargs = {k: getattr(opt, k)
               for k in ["beam_size", "n_best", "max_length", "min_length",
                         "stepwise_penalty", "block_ngram_repeat",
                         "ignore_when_blocking", "dump_beam",
-                        "data_type", "gpu", "verbose", "las_layers"]}
+                        "data_type", "gpu", "verbose", "las_layers", 'use_chars']}
 
     translator = E2ETranslator(model, fields, global_scorer=scorer,
                             out_file=out_file, report_score=report_score,
-                            **kwargs)
+                            side=side, **kwargs)
     return translator
 
 
@@ -88,7 +90,8 @@ class E2ETranslator(object):
                  verbose=False,
                  out_file=None,
                  side='tgt',
-                 las_layers=None):
+                 las_layers=None,
+                 use_chars=False):
         self.gpu = gpu
         self.cuda = gpu > -1
 
@@ -111,6 +114,7 @@ class E2ETranslator(object):
         assert side in ('src', 'tgt')
         self.side = side
         self.las_layers = las_layers
+        self.use_chars = use_chars
 
         # for debugging
         self.beam_trace = self.dump_beam != ""
@@ -151,7 +155,12 @@ class E2ETranslator(object):
                 translations = self.from_batch(batch_data, vocab)
 
                 for trans in translations:
-                    pass
+                    if self.use_chars:
+                        trans = ''.join(trans)
+                    else:
+                        trans = ' '.join(trans)
+                    self.out_file.write(trans)
+                    self.out_file.write('\n')
 
     def translate_batch(self, feats, feats_mask, vocab, batch_size):
         """

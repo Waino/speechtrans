@@ -609,6 +609,12 @@ def translate_opts(parser, use_ensemble=False):
                        help='Size of audio feature vector')
     group.add_argument('-truncate_feat', type=int, default=None,
                        help='Truncate length of audio feature.')
+    group.add_argument('-use_chars', action='store_true',
+                       help="Character based, no tokenization")
+    group.add_argument('-asr', action='store_true',
+                       help="Decode source language ASR transcript,"
+                       "instead of translating")
+
 
 def add_md_help_argument(parser):
     parser.add_argument('-md', action=MarkdownHelpAction,
