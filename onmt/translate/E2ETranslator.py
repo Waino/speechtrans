@@ -148,7 +148,6 @@ class E2ETranslator(object):
                 if len(batch) == 0:
                     break
                 this_batch_size = len(batch)
-                print('batch of size', len(batch))
                 feats, feats_mask = SimpleAudioShardIterator.pad_audio(
                     batch, self.las_layers, self.truncate_feat)
                 feats = Variable(torch.FloatTensor(feats),
@@ -216,8 +215,6 @@ class E2ETranslator(object):
             return m.view(beam_size, batch_size, -1)
 
         # (1) Run the encoder on the audio.
-        print('feats', feats.size(), feats.data.sum())
-        print('feats_mask', feats_mask.size())
 
         enc_states, memory_bank = self.model.src_aud_encoder(feats, feats_mask)
 
@@ -244,8 +241,6 @@ class E2ETranslator(object):
         if self.cuda:
             feats_mask = feats_mask.cuda()
 
-        print('memory_bank', memory_bank.size())
-        print('new feats_mask', feats_mask.size())
 
         # (3) run the decoder to generate sentences, using beam search.
         for i in range(self.max_length):
@@ -261,7 +256,6 @@ class E2ETranslator(object):
             # in the decoder
             inp = inp.unsqueeze(2)
 
-            print('inp', inp.size())
             # Run one step.
             dec_out, dec_states, attn = decoder(
                 inp, memory_bank, dec_states, mask=feats_mask)
