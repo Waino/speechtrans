@@ -166,6 +166,7 @@ class E2ETranslator(object):
                         trans = ' '.join(trans)
                     self.out_file.write(trans)
                     self.out_file.write('\n')
+                self.out_file.flush()
 
     def translate_batch(self, feats, feats_mask, vocab, batch_size):
         """
