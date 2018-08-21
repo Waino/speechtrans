@@ -375,7 +375,7 @@ class E2ETrainer(Trainer):
         # Set model in training mode.
         self.model.train()
 
-    def train(self, train_iter, epoch, report_func=None):
+    def train(self, train_iter, epoch, report_func=None, extra_checkpoint=None):
         """ Train next epoch.
         Args:
             train_iter: training data iterator
@@ -431,6 +431,9 @@ class E2ETrainer(Trainer):
                 accum = 0
                 normalization = 0
                 idx += 1
+
+            if extra_checkpoint is not None and i > 0 and i % 2000 == 0:
+                extra_checkpoint(i)
 
         if len(true_batchs) > 0:
             self._gradient_accumulation(
@@ -539,6 +542,43 @@ class E2ETrainer(Trainer):
                    '%s_acc_%.2f_ppl_%.2f_e%d.pt'
                    % (opt.save_model, valid_stats.accuracy(),
                       valid_stats.ppl(), epoch))
+
+    def drop_extra_checkpoint(self, opt, epoch, fields, i):
+        """ Save an additional mid-epoch checkpoint.
+
+        Args:
+            opt (dict): option object
+            epoch (int): epoch number
+            fields (dict): fields and vocabulary
+            i (int): mb number
+        """
+        real_model = (self.model.module
+                      if isinstance(self.model, nn.DataParallel)
+                      else self.model)
+        real_src_generator = (real_model.src_generator.module
+                          if isinstance(real_model.src_generator, nn.DataParallel)
+                          else real_model.src_generator)
+        real_tgt_generator = (real_model.tgt_generator.module
+                          if isinstance(real_model.tgt_generator, nn.DataParallel)
+                          else real_model.tgt_generator)
+
+        model_state_dict = real_model.state_dict()
+        model_state_dict = {k: v for k, v in model_state_dict.items()
+                            if 'generator' not in k}
+        src_generator_state_dict = real_src_generator.state_dict()
+        tgt_generator_state_dict = real_tgt_generator.state_dict()
+        checkpoint = {
+            'model': model_state_dict,
+            'src_generator': src_generator_state_dict,
+            'tgt_generator': tgt_generator_state_dict,
+            'vocab': onmt.io.save_fields_to_vocab(fields),
+            'opt': opt,
+            'epoch': epoch,
+            'optim': self.optim,
+        }
+        torch.save(checkpoint,
+                   '%s_extra_ep%d_mb%d.pt'
+                   % (opt.save_model, epoch, i))
 
     def _gradient_accumulation(self, true_batchs, total_stats,
                                report_stats, normalization):

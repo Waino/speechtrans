@@ -281,6 +281,9 @@ def train_model(model, fields, optim, data_type, model_opt):
           (opt.epochs + 1 - opt.start_epoch, opt.start_epoch))
     print(' * batch size: %d' % opt.batch_size)
 
+    def extra_checkpoint(i):
+        trainer.drop_extra_checkpoint(model_opt, epoch, fields, i)
+
     for epoch in range(opt.start_epoch, opt.epochs + 1):
         print('')
 
@@ -291,7 +294,8 @@ def train_model(model, fields, optim, data_type, model_opt):
             lazily_load_dataset("train.textonly"), fields, opt)
         train_iter = Interleave(
             train_main_iter, train_textonly_iter, opt)
-        train_stats = trainer.train(train_iter, epoch, report_func)
+        train_stats = trainer.train(train_iter, epoch, report_func,
+            extra_checkpoint=extra_checkpoint)
         print('Train perplexity: %g' % train_stats.ppl())
         print('Train accuracy: %g' % train_stats.accuracy())
         train_iter.report()
