@@ -488,8 +488,8 @@ class E2ETrainer(Trainer):
             outputs, attns, dec_state = tgt_txt_decoder_out
 
             # Compute loss.
-            batch_stats = self.tgt_train_loss.just_compute_loss(
-                    batch, outputs, bp=False)
+            _, batch_stats = self.tgt_train_loss.just_compute_loss(
+                    batch, outputs)
 
             # Update statistics.
             stats.update(batch_stats)
@@ -584,19 +584,24 @@ class E2ETrainer(Trainer):
             # 3. Compute loss in shards for memory efficiency.
             # src side
             outputs, attns, dec_state = src_txt_decoder_out
-            batch_stats = self.src_train_loss.just_compute_loss(
-                    batch, outputs, bp=False)
+            src_loss, src_batch_stats = self.src_train_loss.just_compute_loss(
+                    batch, outputs)
 
             # tgt side
             outputs, attns, dec_state = tgt_txt_decoder_out
-            batch_stats = self.tgt_train_loss.just_compute_loss(
+            tgt_loss, tgt_batch_stats = self.tgt_train_loss.just_compute_loss(
                     batch, outputs)
+
+            loss = src_loss + tgt_loss
+            loss.backward()
 
             # 4. Update the parameters and statistics.
             if self.grad_accum_count == 1:
                 self.optim.step()
-            total_stats.update(batch_stats)
-            report_stats.update(batch_stats)
+            total_stats.update(src_batch_stats)
+            total_stats.update(tgt_batch_stats)
+            report_stats.update(src_batch_stats)
+            report_stats.update(tgt_batch_stats)
 
         if self.grad_accum_count > 1:
             self.optim.step()

@@ -46,7 +46,8 @@ def make_e2e_translator(opt, report_score=True, out_file=None, use_ensemble=Fals
               for k in ["beam_size", "n_best", "max_length", "min_length",
                         "stepwise_penalty", "block_ngram_repeat",
                         "ignore_when_blocking", "dump_beam",
-                        "data_type", "gpu", "verbose", "las_layers", 'use_chars']}
+                        "data_type", "gpu", "verbose", "las_layers", 'use_chars',
+                        'truncate_feat']}
 
     translator = E2ETranslator(model, fields, global_scorer=scorer,
                             out_file=out_file, report_score=report_score,
@@ -91,7 +92,8 @@ class E2ETranslator(object):
                  out_file=None,
                  side='tgt',
                  las_layers=None,
-                 use_chars=False):
+                 use_chars=False,
+                 truncate_feat=None):
         self.gpu = gpu
         self.cuda = gpu > -1
 
@@ -115,6 +117,7 @@ class E2ETranslator(object):
         self.side = side
         self.las_layers = las_layers
         self.use_chars = use_chars
+        self.truncate_feat = truncate_feat
 
         # for debugging
         self.beam_trace = self.dump_beam != ""
@@ -139,11 +142,13 @@ class E2ETranslator(object):
         shard_iter = SimpleAudioShardIterator(src_path)
 
         for shard in shard_iter:
+            shard = iter(shard)
             while True:
                 batch = list(itertools.islice(shard, 0, batch_size))
                 if len(batch) == 0:
                     continue
-                feats, feats_mask = SimpleAudioShardIterator.pad_audio(batch, self.las_layers)
+                feats, feats_mask = SimpleAudioShardIterator.pad_audio(
+                    batch, self.las_layers, self.truncate_feat)
                 feats = Variable(torch.FloatTensor(feats),
                                     requires_grad=False)
                 feats_mask = Variable(torch.FloatTensor(feats_mask),

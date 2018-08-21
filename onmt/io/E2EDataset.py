@@ -273,16 +273,11 @@ class SimpleAudioShardIterator(object):
     def get_minibatch_features(self, shard_index, example_indices, las_layers, truncate=None):
         if self._cache_idx != shard_index:
             self._cache = self.get_shard(shard_index)
-        feats, mask = self.pad_audio(self._cache["mfccs"][example_indices], las_layers)
-        print('feat len', feats.shape[1])
-        if truncate is not None and feats.shape[1] > truncate:
-            feats = feats[:, :truncate]
-            mask = mask[:, :truncate]
-            print('truncated to', feats.shape[1])
+        feats, mask = self.pad_audio(self._cache["mfccs"][example_indices], las_layers, truncate)
         return feats, mask
 
     @staticmethod
-    def pad_audio(data, las_layers):
+    def pad_audio(data, las_layers, truncate=None):
         lengths = [arr.shape[0] for arr in data]
         time_reduction_ratio = 2 ** las_layers
         # returns: padded numpy float array
@@ -302,4 +297,9 @@ class SimpleAudioShardIterator(object):
         masks = np.ones((mb_size, max_len))
         for i, length in enumerate(lengths):
             masks[i, :length] = 0
+        print('feat len', padded.shape[1])
+        if truncate is not None and padded.shape[1] > truncate:
+            padded = padded[:, :truncate]
+            masks = masks[:, :truncate]
+            print('truncated to', padded.shape[1])
         return padded, masks 
