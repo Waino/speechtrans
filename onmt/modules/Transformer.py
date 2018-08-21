@@ -117,18 +117,21 @@ class TransformerEncoder(EncoderBase):
         s_len, n_batch, emb_dim = emb.size()
 
         out = emb.transpose(0, 1).contiguous()
-        src_pad_mask = src_pad_mask.transpose(0, 1)
+        if src_pad_mask is not None:
+            src_pad_mask = src_pad_mask.transpose(0, 1)
         # CHECKS
         out_batch, out_len, _ = out.size()
-        w_batch, w_len = src_pad_mask.size()
-        aeq(out_batch, w_batch)
-        aeq(out_len, w_len)
+        if src_pad_mask is not None:
+            w_batch, w_len = src_pad_mask.size()
+            aeq(out_batch, w_batch)
+            aeq(out_len, w_len)
         # END CHECKS
 
         # Make mask.
         padding_idx = self.embeddings.word_padding_idx
-        src_pad_mask = src_pad_mask.unsqueeze(1) \
-            .expand(w_batch, w_len, w_len)
+        if src_pad_mask is not None:
+            src_pad_mask = src_pad_mask.unsqueeze(1) \
+                .expand(w_batch, w_len, w_len)
         # Run the forward pass of every layer of the tranformer.
         for i in range(self.num_layers):
             out = self.transformer[i](out, src_pad_mask)
@@ -282,13 +285,16 @@ class TransformerDecoder(nn.Module):
         memory_len, memory_batch, _ = memory_bank.size()
         aeq(tgt_batch, memory_batch)
 
-        src_pad_mask = mask if mask is not None else state.mask
+        src_pad_mask = mask if mask is not None else state.mask.data
         src_pad_mask = src_pad_mask.transpose(0, 1)
+        if src_pad_mask.dim() == 3:
+            src_pad_mask = src_pad_mask.squeeze(1)
         tgt_words = tgt[:, :, 0].transpose(0, 1)
-        src_batch, src_len = src_pad_mask.size()
         tgt_batch, tgt_len = tgt_words.size()
-        aeq(tgt_batch, memory_batch, src_batch, tgt_batch)
-        aeq(memory_len, src_len)
+        if src_pad_mask is not None:
+            src_batch, src_len = src_pad_mask.size()
+            aeq(tgt_batch, memory_batch, src_batch, tgt_batch)
+            aeq(memory_len, src_len)
 
         if state.previous_input is not None:
             tgt = torch.cat([state.previous_input, tgt], 0)
@@ -310,8 +316,9 @@ class TransformerDecoder(nn.Module):
         src_memory_bank = memory_bank.transpose(0, 1).contiguous()
 
         padding_idx = self.embeddings.word_padding_idx
-        src_pad_mask = src_pad_mask.unsqueeze(1) \
-            .expand(src_batch, tgt_len, src_len)
+        if src_pad_mask is not None:
+            src_pad_mask = src_pad_mask.unsqueeze(1) \
+                .expand(src_batch, tgt_len, src_len)
         tgt_pad_mask = tgt_words.data.eq(padding_idx).unsqueeze(1) \
             .expand(tgt_batch, tgt_len, tgt_len)
 
@@ -351,7 +358,10 @@ class TransformerDecoderState(DecoderState):
         Args:
             mask (FloatTensor): a mask for the src, of size (len x batch).
         """
-        self.mask = mask
+        if isinstance(mask, Variable):
+            self.mask = mask
+        else:
+            self.mask = Variable(mask, volatile=True)
         self.previous_input = None
         self.previous_layer_inputs = None
 
@@ -371,5 +381,10 @@ class TransformerDecoderState(DecoderState):
 
     def repeat_beam_size_times(self, beam_size):
         """ Repeat beam_size times along batch dimension. """
-        self.mask = Variable(self.mask.data.repeat(1, beam_size, 1),
-                             volatile=True)
+        if self.mask is not None:
+            self.mask = Variable(self.mask.data.repeat(1, beam_size, 1),
+                                 volatile=True)
+#            if self.mask.dim() == 3:
+#                self.mask = self.mask.repeat(1, beam_size, 1)
+#            else:
+#                self.mask = self.mask.repeat(1, beam_size)

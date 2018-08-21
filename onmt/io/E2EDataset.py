@@ -26,10 +26,13 @@ class E2EDataset(ONMTDatasetBase):
         self.n_src_feats = 0
         self.n_tgt_feats = 0
 
-        examples_iter = (self._join_dicts(src_text, tgt_text)
-                         for src_text, tgt_text
-                         in zip(src_text_examples_iter,
-                                tgt_text_examples_iter))
+        if tgt_text_examples_iter is not None:
+            examples_iter = (self._join_dicts(src_text, tgt_text)
+                            for src_text, tgt_text
+                            in zip(src_text_examples_iter,
+                                    tgt_text_examples_iter))
+        else:
+            examples_iter = src_text_examples_iter
 
         # Peek at the first to see which fields are used.
         ex, examples_iter = self._peek(examples_iter)

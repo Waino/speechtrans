@@ -267,14 +267,32 @@ class Translator(object):
             return m.view(beam_size, batch_size, -1)
 
         # (1) Run the encoder on the src.
-        src = onmt.io.make_features(batch, 'src', data_type)
+        src = onmt.io.make_features(batch, 'src', 'text') #data_type)
         src_lengths = None
         if data_type == 'text':
             _, src_lengths = batch.src
 
-        enc_states, memory_bank = self.model.encoder(src, src_lengths)
-        dec_states = self.model.decoder.init_decoder_state(
-            src, memory_bank, enc_states)
+        if data_type == 'e2e':
+            encoder = self.model.src_txt_encoder
+            decoder = self.model.tgt_txt_decoder
+            generator = self.model.tgt_generator
+        else:
+            encoder = self.model.encoder
+            decoder = self.model.decoder
+            generator = self.model.generator
+
+
+        if data_type == 'e2e':
+            padding_idx = self.fields["src"].vocab.stoi[onmt.io.PAD_WORD]
+            mask = src.data.eq(padding_idx).squeeze(2)
+            enc_states, memory_bank = encoder(src, mask)
+            mask = mask.transpose(0, 1).byte()
+            dec_states = decoder.init_decoder_state(
+                mask, memory_bank, enc_states)
+        else:
+            enc_states, memory_bank = encoder(src, src_lengths)
+            dec_states = decoder.init_decoder_state(
+                src, memory_bank, enc_states)
 
         if src_lengths is None:
             assert not isinstance(memory_bank, tuple), \
@@ -314,21 +332,26 @@ class Translator(object):
             inp = inp.unsqueeze(2)
 
             # Run one step.
-            dec_out, dec_states, attn = self.model.decoder(
-                inp, memory_bank, dec_states, memory_lengths=memory_lengths)
+            if data_type == 'e2e':
+                dec_out, dec_states, attn = decoder(
+                    inp, memory_bank, dec_states)
+
+            else:
+                dec_out, dec_states, attn = decoder(
+                    inp, memory_bank, dec_states, memory_lengths=memory_lengths)
             dec_out = dec_out.squeeze(0)
             # dec_out: beam x rnn_size
 
             # (b) Compute a vector of batch x beam word scores.
             if not self.copy_attn:
-                out = self.model.generator.forward(dec_out).data
+                out = generator.forward(dec_out).data
                 out = unbottle(out)
                 # beam x tgt_vocab
                 beam_attn = unbottle(attn["std"])
             else:
-                out = self.model.generator.forward(dec_out,
-                                                   attn["copy"].squeeze(0),
-                                                   src_map)
+                out = generator.forward(dec_out,
+                                        attn["copy"].squeeze(0),
+                                        src_map)
                 # beam x (tgt_vocab + extra_vocab)
                 out = data.collapse_copy_scores(
                     unbottle(out.data),
@@ -379,19 +402,19 @@ class Translator(object):
         #  (1) run the encoder on the src
         enc_states, memory_bank = self.model.encoder(src, src_lengths)
         dec_states = \
-            self.model.decoder.init_decoder_state(src, memory_bank, enc_states)
+            decoder.init_decoder_state(src, memory_bank, enc_states)
 
         #  (2) if a target is specified, compute the 'goldScore'
         #  (i.e. log likelihood) of the target under the model
         tt = torch.cuda if self.cuda else torch
         gold_scores = tt.FloatTensor(batch.batch_size).fill_(0)
-        dec_out, _, _ = self.model.decoder(
+        dec_out, _, _ = decoder(
             tgt_in, memory_bank, dec_states, memory_lengths=src_lengths)
 
         tgt_pad = self.fields["tgt"].vocab.stoi[onmt.io.PAD_WORD]
         for dec, tgt in zip(dec_out, batch.tgt[1:].data):
             # Log prob of each word.
-            out = self.model.generator.forward(dec)
+            out = generator.forward(dec)
             tgt = tgt.unsqueeze(1)
             scores = out.data.gather(1, tgt)
             scores.masked_fill_(tgt.eq(tgt_pad), 0)

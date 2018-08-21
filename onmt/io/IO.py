@@ -219,6 +219,9 @@ def build_dataset(fields, data_type, src_path, tgt_path, src_dir=None,
                                window=window,
                                normalize_audio=normalize_audio,
                                use_filter_pred=use_filter_pred)
+    elif data_type == 'e2e':
+        dataset = E2EDataset(
+            fields, src_examples_iter, tgt_examples_iter)
 
     return dataset
 
@@ -343,7 +346,9 @@ def _make_examples_nfeats_tpl(data_type, src_path, src_dir,
     on source side for different 'data_type'.
     """
 
-    if data_type == 'text':
+    if data_type in ('text', 'e2e'):
+        if data_type == 'e2e':
+            print('******** using E2E model as text translator ***')
         src_examples_iter, num_src_feats = \
             TextDataset.make_text_examples_nfeats_tpl(
                 src_path, src_seq_length_trunc, "src")
