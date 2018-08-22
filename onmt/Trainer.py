@@ -20,6 +20,40 @@ import onmt
 import onmt.io
 import onmt.modules
 
+class TaskStatistics(object):
+    def __init__(self):
+        self.main = Statistics()
+        self.tt = Statistics()
+        self.asr = Statistics()
+        self.ae = Statistics()
+
+    def update(self, src_stat, trg_stat, task):
+        if task == 'main':
+            self.main.update(trg_stat)
+            self.asr.update(src_stat)
+        else:
+            self.tt.update(trg_stat)
+            self.ae.update(src_stat)
+
+    def output(self, *args):
+        self.main.output(*args, extra='main')
+        self.tt.output(*args, extra='tt')
+        self.asr.output(*args, extra='asr')
+        self.ae.output(*args, extra='ae')
+
+    def ppl(self):
+        return self.main.ppl()
+
+    def accuracy(self):
+        return self.main.accuracy()
+
+    def elapsed_time(self):
+        return self.main.elapsed_time()
+
+    @property
+    def start_time(self):
+        return self.main.start_time
+        
 
 class Statistics(object):
     """
@@ -43,18 +77,24 @@ class Statistics(object):
         self.n_correct += stat.n_correct
 
     def accuracy(self):
+        if self.n_words == 0:
+            return 0
         return 100 * (self.n_correct / self.n_words)
 
     def xent(self):
+        if self.n_words == 0:
+            return 0
         return self.loss / self.n_words
 
     def ppl(self):
+        if self.n_words == 0:
+            return 0
         return math.exp(min(self.loss / self.n_words, 100))
 
     def elapsed_time(self):
         return time.time() - self.start_time
 
-    def output(self, epoch, batch, n_batches, start):
+    def output(self, epoch, batch, n_batches, start, extra=''):
         """Write out statistics to stdout.
 
         Args:
@@ -65,14 +105,15 @@ class Statistics(object):
         """
         t = self.elapsed_time()
         print(("Epoch %2d, %5d/%5d; acc: %6.2f; ppl: %6.2f; xent: %6.2f; " +
-               "%3.0f src tok/s; %3.0f tgt tok/s; %6.0f s elapsed") %
+               "%3.0f src tok/s; %3.0f tgt tok/s; %6.0f s elapsed %s") %
               (epoch, batch,  n_batches,
                self.accuracy(),
                self.ppl(),
                self.xent(),
                self.n_src_words / (t + 1e-5),
                self.n_words / (t + 1e-5),
-               time.time() - start))
+               time.time() - start,
+               extra))
         sys.stdout.flush()
 
     def log(self, prefix, experiment, lr):
@@ -387,8 +428,8 @@ class E2ETrainer(Trainer):
         Returns:
             stats (:obj:`onmt.Statistics`): epoch loss statistics
         """
-        total_stats = Statistics()
-        report_stats = Statistics()
+        total_stats = TaskStatistics()
+        report_stats = TaskStatistics()
         idx = 0
         true_batchs = []
         accum = 0
@@ -642,10 +683,8 @@ class E2ETrainer(Trainer):
             # 4. Update the parameters and statistics.
             if self.grad_accum_count == 1:
                 self.optim.step()
-            total_stats.update(src_batch_stats)
-            total_stats.update(tgt_batch_stats)
-            report_stats.update(src_batch_stats)
-            report_stats.update(tgt_batch_stats)
+            total_stats.update(src_batch_stats, tgt_batch_stats, task)
+            report_stats.update(src_batch_stats, tgt_batch_stats, task)
 
         if self.grad_accum_count > 1:
             self.optim.step()

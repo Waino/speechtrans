@@ -108,7 +108,7 @@ def report_func(epoch, batch, num_batches,
             # Log the progress using the number of batches on the x-axis.
             report_stats.log_tensorboard(
                 "progress", writer, lr, progress_step)
-        report_stats = onmt.Statistics()
+        report_stats = onmt.TaskStatistics()
 
     return report_stats
 
