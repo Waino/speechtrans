@@ -403,9 +403,12 @@ def load_fields(dataset, data_type, checkpoint):
     fields = dict([(k, f) for (k, f) in fields.items()
                    if k in dataset.examples[0].__dict__])
 
-    if data_type == 'text':
+    if data_type in ('text', 'e2e'):
         print(' * vocabulary size. source = %d; target = %d' %
               (len(fields['src'].vocab), len(fields['tgt'].vocab)))
+        print('types of stoi: ',
+            type(fields['src'].vocab.stoi),
+            type(fields['tgt'].vocab.stoi))
     else:
         print(' * vocabulary size. target = %d' %
               (len(fields['tgt'].vocab)))
