@@ -491,6 +491,8 @@ def train_opts(parser):
                        help='Size of audio feature vector')
     group.add_argument('-truncate_feat', type=int, default=None,
                        help='Truncate length of audio feature.')
+    group.add_argument('-autoencoder_loss_weight', type=float, default=0.1,
+                       help='Weighting for autoencoder loss.')
 
 
 def translate_opts(parser, use_ensemble=False):

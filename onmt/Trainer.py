@@ -348,7 +348,8 @@ class E2ETrainer(Trainer):
     def __init__(self, model, src_train_loss, tgt_train_loss, valid_loss, optim,
                  trunc_size=0, shard_size=32, data_type='text',
                  norm_method="sents", grad_accum_count=1,
-                 e2e_audio=None, las_layers=3, cuda=True, truncate_feat=None):
+                 e2e_audio=None, las_layers=3, cuda=True, truncate_feat=None,
+                 ae_weight=1.0):
         # Basic attributes.
         self.model = model
         self.src_train_loss = src_train_loss
@@ -365,6 +366,7 @@ class E2ETrainer(Trainer):
         self.las_layers = las_layers
         self.cuda = cuda
         self.truncate_feat = truncate_feat
+        self.ae_weight = ae_weight
 
         assert(self.trunc_size == 0)
         assert(grad_accum_count > 0)
@@ -626,6 +628,8 @@ class E2ETrainer(Trainer):
             outputs, attns, dec_state = src_txt_decoder_out
             src_loss, src_batch_stats = self.src_train_loss.just_compute_loss(
                     batch, outputs)
+            if task == 'text-only':
+                src_loss *= self.ae_weight
 
             # tgt side
             outputs, attns, dec_state = tgt_txt_decoder_out
