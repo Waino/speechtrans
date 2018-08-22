@@ -637,7 +637,7 @@ class E2ETrainer(Trainer):
                     batch, outputs)
 
             loss = src_loss + tgt_loss
-            loss.backward()
+            loss.div(normalization).backward()
 
             # 4. Update the parameters and statistics.
             if self.grad_accum_count == 1:
