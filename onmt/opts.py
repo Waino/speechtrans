@@ -493,6 +493,8 @@ def train_opts(parser):
                        help='Truncate length of audio feature.')
     group.add_argument('-autoencoder_loss_weight', type=float, default=0.1,
                        help='Weighting for autoencoder loss.')
+    group.add_argument('-textonly_batch_size', type=int, default=None,
+                       help='batch size for text-only tasks')
 
 
 def translate_opts(parser, use_ensemble=False):

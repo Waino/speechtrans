@@ -175,14 +175,22 @@ class DatasetLazyIter(object):
             repeat=False)
 
 
-def make_dataset_iter(datasets, fields, opt, is_train=True):
+def make_dataset_iter(datasets, fields, opt, task):
     """
     This returns user-defined train/validate data iterator for the trainer
     to iterate over during each train epoch. We implement simple
     ordered iterator strategy here, but more sophisticated strategy
     like curriculum learning is ok too.
     """
-    batch_size = opt.batch_size if is_train else opt.valid_batch_size
+    if task == 'main':
+        batch_size = opt.batch_size
+        is_train = True
+    elif task == 'textonly':
+        batch_size = opt.textonly_batch_size if opt.textonly_batch_size is not None else opt.batch_size
+        is_train = True
+    else: #'valid'
+        batch_size = opt.valid_batch_size
+        is_train = False
     batch_size_fn = None
 
     device = opt.gpuid[0] if opt.gpuid else -1
@@ -290,9 +298,9 @@ def train_model(model, fields, optim, data_type, model_opt):
 
         # 1. Train for one epoch on the training set.
         train_main_iter = make_dataset_iter(
-            lazily_load_dataset("train.main"), fields, opt)
+            lazily_load_dataset("train.main"), fields, opt, task='main')
         train_textonly_iter = make_dataset_iter(
-            lazily_load_dataset("train.textonly"), fields, opt)
+            lazily_load_dataset("train.textonly"), fields, opt, task='textonly')
         train_iter = Interleave(
             train_main_iter, train_textonly_iter, opt)
         train_stats = trainer.train(train_iter, epoch, report_func,
@@ -304,7 +312,7 @@ def train_model(model, fields, optim, data_type, model_opt):
         # 2. Validate on the validation set.
         valid_iter = make_dataset_iter(lazily_load_dataset("valid"),
                                        fields, opt,
-                                       is_train=False)
+                                       task='valid')
         valid_stats = trainer.validate(valid_iter)
         print('Validation perplexity: %g' % valid_stats.ppl())
         print('Validation accuracy: %g' % valid_stats.accuracy())
