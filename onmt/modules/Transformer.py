@@ -351,6 +351,9 @@ class TransformerDecoderState(DecoderState):
         Args:
             mask (FloatTensor): a mask for the src, of size (len x batch).
         """
+        # DecoderState.beam_update requires states to be Variable
+        if not isinstance(mask, Variable):
+            mask = Variable(mask, volatile=True)
         self.mask = mask
         self.previous_input = None
         self.previous_layer_inputs = None

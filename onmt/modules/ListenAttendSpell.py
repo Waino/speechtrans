@@ -81,6 +81,7 @@ class E2EModel(nn.Module):
         self.src_txt_encoder = src_txt_encoder
         self.src_txt_decoder = src_txt_decoder
         self.tgt_txt_decoder = tgt_txt_decoder
+        self.time_reduction_ratio = 2 ** self.src_aud_encoder.num_layers
 
     def forward(self, feats, feats_mask, src, tgt, task='main'):
         if task == 'main':
@@ -106,10 +107,7 @@ class E2EModel(nn.Module):
         enc_final, memory_bank = encoder(inp, mask)
         if task == 'main':
             # the audio feature timestep has been reduced,
-            # so the padding mask is no longer valid
-            mask_type = type(mask.data)
-            mask = mask_type(
-                memory_bank.size(0), memory_bank.size(1)).zero_()
+            mask = mask[:, ::self.time_reduction_ratio].transpose(0, 1)
         mask = mask.byte()
 
         # decode to src

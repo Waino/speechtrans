@@ -518,7 +518,7 @@ class E2ETrainer(Trainer):
                     truncate=self.truncate_feat)
                 feats = Variable(torch.FloatTensor(feats),
                                     requires_grad=False)
-                feats_mask = Variable(torch.FloatTensor(feats_mask),
+                feats_mask = Variable(torch.ByteTensor(feats_mask),
                                         requires_grad=False)
                 if self.cuda:
                     feats = feats.cuda()
@@ -645,7 +645,7 @@ class E2ETrainer(Trainer):
                     truncate=self.truncate_feat)
                 feats = Variable(torch.FloatTensor(feats),
                                     requires_grad=False)
-                feats_mask = Variable(torch.FloatTensor(feats_mask),
+                feats_mask = Variable(torch.ByteTensor(feats_mask),
                                         requires_grad=False)
                 if self.cuda:
                     feats = feats.cuda()
