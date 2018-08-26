@@ -152,8 +152,8 @@ class E2ETranslator(object):
                     batch, self.las_layers, self.truncate_feat)
                 feats = Variable(torch.FloatTensor(feats),
                                     requires_grad=False)
-                feats_mask = Variable(torch.FloatTensor(feats_mask),
-                                        requires_grad=False)
+                feats_mask = Variable(torch.ByteTensor(feats_mask),
+                                      requires_grad=False)
                 if self.cuda:
                     feats = feats.cuda()
                     feats_mask = feats_mask.cuda()
@@ -234,13 +234,10 @@ class E2ETranslator(object):
         else:
             memory_bank = rvar(memory_bank.data)
         dec_states.repeat_beam_size_times(beam_size)
-        # the audio feature timestep has been reduced,
-        # so the padding mask is no longer valid
-        feats_mask = torch.ByteTensor(
-            memory_bank.size(0), memory_bank.size(1)).zero_()
-        if self.cuda:
-            feats_mask = feats_mask.cuda()
-
+        # the audio feature timestep has been reduced
+        time_reduction_ratio = 2 ** self.las_layers
+        feats_mask = feats_mask[:, ::time_reduction_ratio].transpose(0, 1)
+        feats_mask = rmask(feats_mask.data)
 
         # (3) run the decoder to generate sentences, using beam search.
         for i in range(self.max_length):
