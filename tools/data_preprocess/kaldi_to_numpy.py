@@ -39,7 +39,7 @@ def make_shards(generator, shard_size):
         if len(shard["keys"]) == shard_size:
             yield shard
             shard = {}
-    if len(shard["keys"]) > 0:
+    if len(shard.get("keys", [])) > 0:
         yield shard
     raise StopIteration()
 
@@ -49,6 +49,15 @@ def write_key_list(key_list, filepath):
     with open(filepath, "w") as fo:
         for key in key_list:
             print(key, file=fo)
+
+def read_exclusion_list(path):
+    with open(path) as fi:
+        return set([line.strip() for line in fi])
+def filter_with_exclusion_list(generator, exclude_list):
+    return ((name, key, data) for name, key, data in generator if key not in exclude_list)
+
+def filter_by_max_len(generator, max_len):
+    return ((name, key, data) for name, key, data in generator if data.shape[0] <= max_len)
 
 #Data readers (as python generators):
 def feats_ark_generator(ark, name):
@@ -73,6 +82,8 @@ if __name__  == "__main__":
     """)
     parser.add_argument("feats_scp", metavar="feats.scp",
             help = "Read float matrices pointed to by an scp")
+    parser.add_argument("outdir",
+            help = "Path to directory where the shards are placed")
     parser.add_argument("--encoding",
             default = 'utf-8',
             help = "Change text encoding. Affects at least how the key is encoded")
@@ -80,14 +91,28 @@ if __name__  == "__main__":
             type=int,
             default = 2048,
             help = "The size of shards the set is divided into")
-    parser.add_argument("outdir",
-            help = "Path to directory where the shards are placed")
+    parser.add_argument("--use-ark", default = False,
+            help = "Read the given feats.scp as if it was an ark format.")
+    parser.add_argument("--exclusion-list-file", help = "List of keys to exclude")
+    parser.add_argument("--max-frame-length", type = int,
+        help = "Maximum length of utterance in frames, default is no maximum", default=0)
     args = parser.parse_args()
     ENCODING = args.encoding
     outdir = pathlib.Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
-    generator = feats_scp_generator(args.feats_scp, "mfcc")
+    if args.use_ark:
+        generator = feats_ark_generator(args.feats_scp, "mfcc")
+    else:
+        generator = feats_scp_generator(args.feats_scp, "mfcc")
+    if args.exclusion_list_file:
+        print("Reading exclusion list from:", args.exclusion_list_file)
+        exclusion_list = read_exclusion_list(args.exclusion_list_file)
+        generator = filter_with_exclusion_list(generator, exclusion_list)
+    if args.max_frame_length > 0:
+        print("Filtering utterances longer than", args.max_frame_length, "frames")
+        generator = filter_by_max_len(generator, args.max_frame_length)
     for i, shard in enumerate(make_shards(generator, args.shard_size)):
+        print("Processing shard number", i)
         shard_path = outdir / "keys_mfccs.{shardnum}.shard".format(shardnum=str(i)) 
         key_list_path = outdir / "keys.{shardnum}.txt".format(shardnum=str(i))
         write_shard(shard, shard_path)
