@@ -99,6 +99,7 @@ class E2EDataset(ONMTDatasetBase):
         fields = {}
 
         fields["src"] = torchtext.data.Field(
+            init_token=BOS_WORD, eos_token=EOS_WORD,
             pad_token=PAD_WORD,
             include_lengths=True)
 
