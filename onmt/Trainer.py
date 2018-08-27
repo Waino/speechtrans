@@ -632,12 +632,12 @@ class E2ETrainer(Trainer):
         for batch in true_batchs:
             dec_state = None
             src = onmt.io.make_features(batch, 'src', self.data_type)
-            src_lengths = None
             # absurd boilerplate because torchtext doesn't
             # allow passing through non-numerical data
             task = batch.dataset.fields['task'].vocab.itos[batch.task.data[0]]
             if task == 'text-only':
                 feats, feats_mask = None, None
+                _, src_lengths = batch.src
             else:
                 shard_idx = batch.shard_idx.data[0]
                 feat_idx = batch.feat_idx.data
@@ -646,6 +646,7 @@ class E2ETrainer(Trainer):
                     truncate=self.truncate_feat)
                 feats = Variable(torch.FloatTensor(feats),
                                     requires_grad=False)
+                src_lengths = None
                 feats_mask = Variable(torch.ByteTensor(feats_mask),
                                         requires_grad=False)
                 if self.cuda:
@@ -663,7 +664,8 @@ class E2ETrainer(Trainer):
             src_txt_decoder_out, tgt_txt_decoder_out = \
                 self.model(feats, feats_mask,
                             src, tgt,
-                            task=task)
+                            task=task,
+                            src_lengths=src_lengths)
 
             # 3. Compute loss in shards for memory efficiency.
             # src side

@@ -225,8 +225,9 @@ class E2ETranslator(object):
             decoder = self.model.tgt_txt_decoder
             generator = self.model.tgt_generator
 
+        dec_init = memory_bank.mean(dim=0, keepdim=True)
         dec_states = decoder.init_decoder_state(
-            feats_mask, memory_bank, enc_states)
+            feats_mask, memory_bank, (dec_init, dec_init))
 
         # (2) Repeat src objects `beam_size` times.
         if isinstance(memory_bank, tuple):
@@ -236,7 +237,11 @@ class E2ETranslator(object):
         dec_states.repeat_beam_size_times(beam_size)
         # the audio feature timestep has been reduced
         time_reduction_ratio = 2 ** self.las_layers
-        feats_mask = feats_mask[:, ::time_reduction_ratio].transpose(0, 1)
+        feats_mask = feats_mask[:, ::time_reduction_ratio]
+        # this is idiotic: mask turned into lenghts, just to turn it back to mask later
+        crap = feats_mask.shape[1] - feats_mask.long().sum(dim=1)
+        crap = crap.data.repeat(beam_size)
+        feats_mask = feats_mask.transpose(0, 1)
         feats_mask = rmask(feats_mask.data)
 
         # (3) run the decoder to generate sentences, using beam search.
@@ -255,7 +260,10 @@ class E2ETranslator(object):
 
             # Run one step.
             dec_out, dec_states, attn = decoder(
-                inp, memory_bank, dec_states, mask=feats_mask)
+                inp, memory_bank, dec_states, memory_lengths=crap)
+            #else:   # not RNN src decoder
+            #    dec_out, dec_states, attn = decoder(
+            #        inp, memory_bank, dec_states, mask=feats_mask)
             dec_out = dec_out.squeeze(0)
             # dec_out: beam x rnn_size
 

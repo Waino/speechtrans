@@ -347,8 +347,22 @@ def make_e2e_model(model_opt, fields, gpu, checkpoint=None):
 
     ### Make decoders.
     # source text
-    src_txt_decoder = make_decoder(model_opt, src_embeddings,
-                                   layers=model_opt.src_decoder_layers)
+    if model_opt.rnn_src_decoder:
+        src_txt_decoder = StdRNNDecoder(
+                             model_opt.rnn_type,
+                             model_opt.brnn,
+                             model_opt.src_decoder_layers,
+                             model_opt.rnn_size,
+                             model_opt.global_attention,
+                             model_opt.coverage_attn,
+                             model_opt.context_gate,
+                             model_opt.copy_attn,
+                             model_opt.dropout,
+                             src_embeddings,
+                             model_opt.reuse_copy_attn)
+    else:
+        src_txt_decoder = make_decoder(model_opt, src_embeddings,
+                                    layers=model_opt.src_decoder_layers)
     # target text
     tgt_txt_decoder = make_decoder(model_opt, tgt_embeddings)
 

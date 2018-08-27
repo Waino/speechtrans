@@ -485,6 +485,8 @@ def train_opts(parser):
                        help='Probability of selecting a text-only task.')
     group.add_argument('-las_layers', type=int, default=3,
                        help='Number of pyramidal bi-LSTM layers in LAS encoder.')
+    group.add_argument('-rnn_src_decoder', action='store_true',
+                       help='Use RNN source side decoder')
     group.add_argument('-src_decoder_layers', type=int, default=2,
                        help='Number of layers in source side decoder')
     group.add_argument('-audio_feature_size', type=int, default=13,

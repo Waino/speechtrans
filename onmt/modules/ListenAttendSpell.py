@@ -83,7 +83,7 @@ class E2EModel(nn.Module):
         self.tgt_txt_decoder = tgt_txt_decoder
         self.time_reduction_ratio = 2 ** self.src_aud_encoder.num_layers
 
-    def forward(self, feats, feats_mask, src, tgt, task='main'):
+    def forward(self, feats, feats_mask, src, tgt, task='main', src_lengths=None):
         if task == 'main':
             assert feats is not None
             encoder = self.src_aud_encoder
@@ -107,16 +107,22 @@ class E2EModel(nn.Module):
         enc_final, memory_bank = encoder(inp, mask)
         if task == 'main':
             # the audio feature timestep has been reduced,
-            mask = mask[:, ::self.time_reduction_ratio].transpose(0, 1)
+            mask = mask[:, ::self.time_reduction_ratio]
+            # this is idiotic: mask turned into lenghts, just to turn it back to mask later
+            src_lengths = mask.shape[1] - mask.data.long().sum(dim=1)
+            #src_lengths = torch.LongTensor(src_lengths).cuda()
+            mask = mask.transpose(0, 1)
         mask = mask.byte()
 
         # decode to src
+        dec_init = memory_bank.mean(dim=0, keepdim=True)
         enc_state = self.src_txt_decoder.init_decoder_state(
-            mask, memory_bank, enc_final)
+            mask, memory_bank, (dec_init, dec_init))
         # (decoder_outputs, dec_state, attns)
         src_txt_decoder_out = self.src_txt_decoder(
             src_feed, memory_bank, enc_state,
-            mask=mask)
+            memory_lengths=src_lengths)
+            #mask=mask)
 
         # decode to tgt
         enc_state = self.tgt_txt_decoder.init_decoder_state(
