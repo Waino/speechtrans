@@ -210,6 +210,28 @@ class NMTLossCompute(LossComputeBase):
 
         return loss, stats
 
+class E2ELossCompute(NMTLossCompute):
+    def __init__(self, *args, side='tgt', **kwargs):
+        self.side = side
+        super().__init__(*args, **kwargs)
+
+    def monolithic_compute_loss(self, batch, output, attns):
+        raise Exception('call just_compute_loss instead')
+
+    def sharded_compute_loss(self, batch, output, attns,
+                             cur_trunc, trunc_size, shard_size,
+                             normalization):
+        raise Exception('call just_compute_loss instead')
+
+    def just_compute_loss(self, batch, output):
+        if self.side == 'src':
+            target, _ = batch.src
+        else:
+            target = batch.tgt
+        target = target[1:]
+        loss, batch_stats = self._compute_loss(None, output, target)
+        return loss, batch_stats
+
 
 class TypeWeightingLossCompute(NMTLossCompute):
     def __init__(self, *args, tgt_vocab_weights, **kwargs):

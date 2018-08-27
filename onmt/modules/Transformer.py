@@ -111,7 +111,7 @@ class TransformerEncoder(EncoderBase):
 
     def forward(self, input, src_pad_mask, hidden=None):
         """ See :obj:`EncoderBase.forward()`"""
-        self._check_args(input, lengths, hidden)
+        self._check_args(input, None, hidden)
 
         emb = self.embeddings(input)
         s_len, n_batch, emb_dim = emb.size()

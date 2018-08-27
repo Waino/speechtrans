@@ -32,6 +32,7 @@ class pBLSTMLayer(nn.Module):
         timestep = input_x.size(1)
         feature_size = input_x.size(2)
         # Reduce time resolution
+        assert timestep % 2 == 0
         input_x = input_x.contiguous().view(batch_size,
                                             int(timestep/2),
                                             feature_size*2)
@@ -58,17 +59,18 @@ class LasEncoder(EncoderBase):
                                            hidden_size,
                                            rnn_type=rnn_type,
                                            dropout=dropout))
-        self.modules = nn.ModuleList(modules)
+        self.las_modules = nn.ModuleList(modules)
         self.num_layers = num_layers
 
-    def forward(self, input, lengths=None, hidden=None):
+    def forward(self, input, src_pad_mask=None, hidden=None):
         """ See :obj:`EncoderBase.forward()`"""
-        self._check_args(input, lengths, hidden)
+        self._check_args(input, None, hidden)
 
         out = input
         for i in range(self.num_layers):
-            out, hidden = self.modules[i](out)
-        return hidden, out
+            out, hidden = self.las_modules[i](out)
+        # out is transposed to (timestep, batch, feats)
+        return hidden, out.transpose(0, 1)
 
 
 class E2EModel(nn.Module):
@@ -91,17 +93,24 @@ class E2EModel(nn.Module):
             encoder = self.src_txt_encoder
             inp = src
             padding_idx = self.src_txt_encoder.embeddings.word_padding_idx
-            mask = src.data.eq(padding_idx)
+            mask = src.data.eq(padding_idx).squeeze(2)
         #elif task = 'asr':
         else:
             raise Exception('Unknown task "{}"'.format(task))
 
         # exclude last timestep from inputs
         src_feed = src[:-1]
-        trg_feed = trg[:-1]
+        tgt_feed = tgt[:-1]
 
         # encode with appropriate encoder
         enc_final, memory_bank = encoder(inp, mask)
+        if task == 'main':
+            # the audio feature timestep has been reduced,
+            # so the padding mask is no longer valid
+            mask_type = type(mask.data)
+            mask = mask_type(
+                memory_bank.size(0), memory_bank.size(1)).zero_()
+        mask = mask.byte()
 
         # decode to src
         enc_state = self.src_txt_decoder.init_decoder_state(

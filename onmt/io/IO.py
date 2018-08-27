@@ -12,6 +12,7 @@ from onmt.io.DatasetBase import UNK_WORD, PAD_WORD, BOS_WORD, EOS_WORD
 from onmt.io.TextDataset import TextDataset
 from onmt.io.ImageDataset import ImageDataset
 from onmt.io.AudioDataset import AudioDataset
+from onmt.io.E2EDataset import E2EDataset
 
 
 def _getstate(self):
@@ -46,6 +47,8 @@ def get_fields(data_type, n_src_features, n_tgt_features):
         return ImageDataset.get_fields(n_src_features, n_tgt_features)
     elif data_type == 'audio':
         return AudioDataset.get_fields(n_src_features, n_tgt_features)
+    elif data_type == 'e2e':
+        return E2EDataset.get_fields()
 
 
 def load_fields_from_vocab(vocab, data_type="text"):
@@ -138,6 +141,8 @@ def make_features(batch, side, data_type='text'):
 
     if data_type == 'text':
         return torch.cat([level.unsqueeze(2) for level in levels], 2)
+    elif data_type == 'e2e':
+        return levels[0].unsqueeze(2)
     else:
         return levels[0]
 
@@ -300,7 +305,7 @@ def build_vocab(train_dataset_files, fields, data_type, share_vocab,
         _build_field_vocab(fields[key], counter[key])
         print(" * %s vocab size: %d." % (key, len(fields[key].vocab)))
 
-    if data_type == 'text':
+    if data_type in ('text', 'e2e'):
         _build_field_vocab(fields["src"], counter["src"],
                            max_size=src_vocab_size,
                            min_freq=src_words_min_frequency)
@@ -322,6 +327,9 @@ def build_vocab(train_dataset_files, fields, data_type, share_vocab,
                 vocab_size=src_vocab_size)
             fields["src"].vocab = merged_vocab
             fields["tgt"].vocab = merged_vocab
+
+    if data_type == 'e2e':
+        _build_field_vocab(fields["task"], counter["task"])
 
     return fields
 

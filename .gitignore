@@ -110,3 +110,10 @@ ENV/
 
 # Tensorboard
 runs/
+
+# vim
+*.swp
+*.swo
+
+# meld
+*.orig

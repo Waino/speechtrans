@@ -15,7 +15,7 @@ from onmt.Models import NMTModel, MeanEncoder, RNNEncoder, \
 from onmt.modules import Embeddings, ImageEncoder, CopyGenerator, \
                          TransformerEncoder, TransformerDecoder, \
                          CNNEncoder, CNNDecoder, AudioEncoder, \
-                         LinkedEmbeddings
+                         LinkedEmbeddings, LasEncoder, E2EModel
 from onmt.Utils import use_gpu
 from torch.nn.init import xavier_uniform
 
@@ -130,25 +130,27 @@ def make_encoder(opt, embeddings):
                           opt.bridge)
 
 
-def make_decoder(opt, embeddings):
+def make_decoder(opt, embeddings, layers=None):
     """
     Various decoder dispatcher function.
     Args:
         opt: the option in current environment.
         embeddings (Embeddings): vocab embeddings for this decoder.
     """
+    if layers is None:
+        layers = opt.dec_layers
     if opt.decoder_type == "transformer":
-        return TransformerDecoder(opt.dec_layers, opt.rnn_size,
+        return TransformerDecoder(layers, opt.rnn_size,
                                   opt.global_attention, opt.copy_attn,
                                   opt.dropout, embeddings)
     elif opt.decoder_type == "cnn":
-        return CNNDecoder(opt.dec_layers, opt.rnn_size,
+        return CNNDecoder(layers, opt.rnn_size,
                           opt.global_attention, opt.copy_attn,
                           opt.cnn_kernel_width, opt.dropout,
                           embeddings)
     elif opt.input_feed:
         return InputFeedRNNDecoder(opt.rnn_type, opt.brnn,
-                                   opt.dec_layers, opt.rnn_size,
+                                   layers, opt.rnn_size,
                                    opt.global_attention,
                                    opt.coverage_attn,
                                    opt.context_gate,
@@ -158,7 +160,7 @@ def make_decoder(opt, embeddings):
                                    opt.reuse_copy_attn)
     else:
         return StdRNNDecoder(opt.rnn_type, opt.brnn,
-                             opt.dec_layers, opt.rnn_size,
+                             layers, opt.rnn_size,
                              opt.global_attention,
                              opt.coverage_attn,
                              opt.context_gate,
@@ -181,10 +183,16 @@ def load_test_model(opt, dummy_opt, model_path=None):
         if arg not in model_opt:
             model_opt.__dict__[arg] = dummy_opt[arg]
 
-    model = make_base_model(model_opt, fields,
-                            use_gpu(opt), checkpoint)
+    if opt.data_type == 'e2e':
+        model = make_e2e_model(model_opt, fields,
+                               use_gpu(opt), checkpoint)
+        model.src_generator.eval()
+        model.tgt_generator.eval()
+    else:
+        model = make_base_model(model_opt, fields,
+                                use_gpu(opt), checkpoint)
+        model.generator.eval()
     model.eval()
-    model.generator.eval()
     return fields, model, model_opt
 
 
@@ -327,17 +335,20 @@ def make_e2e_model(model_opt, fields, gpu, checkpoint=None):
 
     ### Make encoders.
     # source audio
-    src_aud_encoder = LasEncoder(opt.audio_feature_size,
-                                 hidden_size=opt.rnn_size,
-                                 rnn_type=opt.rnn_type,
-                                 dropout=opt.dropout,
-                                 num_layers=opt.las_layers)
+    # LasEncoder is bidirectional, so output is twice the hidden size
+    assert model_opt.rnn_size % 2 == 0
+    src_aud_encoder = LasEncoder(model_opt.audio_feature_size,
+                                 hidden_size=int(model_opt.rnn_size / 2),
+                                 rnn_type=model_opt.rnn_type,
+                                 dropout=model_opt.dropout,
+                                 num_layers=model_opt.las_layers)
     # source text
     src_txt_encoder = make_encoder(model_opt, src_embeddings)
 
     ### Make decoders.
     # source text
-    src_txt_decoder = make_decoder(model_opt, src_embeddings)
+    src_txt_decoder = make_decoder(model_opt, src_embeddings,
+                                   layers=model_opt.src_decoder_layers)
     # target text
     tgt_txt_decoder = make_decoder(model_opt, tgt_embeddings)
 
@@ -365,19 +376,24 @@ def make_e2e_model(model_opt, fields, gpu, checkpoint=None):
         print('Loading model parameters.')
         model.load_state_dict(checkpoint['model'])
         src_generator.load_state_dict(checkpoint['src_generator'])
-        trg_generator.load_state_dict(checkpoint['trg_generator'])
+        tgt_generator.load_state_dict(checkpoint['tgt_generator'])
     else:
         if model_opt.param_init != 0.0:
             print('Intializing model parameters.')
             for p in model.parameters():
                 p.data.uniform_(-model_opt.param_init, model_opt.param_init)
-            for p in generator.parameters():
+            for p in src_generator.parameters():
+                p.data.uniform_(-model_opt.param_init, model_opt.param_init)
+            for p in tgt_generator.parameters():
                 p.data.uniform_(-model_opt.param_init, model_opt.param_init)
         if model_opt.param_init_glorot:
             for p in model.parameters():
                 if p.dim() > 1:
                     xavier_uniform(p)
-            for p in generator.parameters():
+            for p in src_generator.parameters():
+                if p.dim() > 1:
+                    xavier_uniform(p)
+            for p in tgt_generator.parameters():
                 if p.dim() > 1:
                     xavier_uniform(p)
 
@@ -391,11 +407,13 @@ def make_e2e_model(model_opt, fields, gpu, checkpoint=None):
 
     # Add generator to model (this registers it as parameter of model).
     model.src_generator = src_generator
-    model.trg_generator = trg_generator
+    model.tgt_generator = tgt_generator
 
     # Make the whole model leverage GPU if indicated to do so.
     if gpu:
+        print('moving model to gpu...')
         model.cuda()
+        print('...done')
     else:
         model.cpu()
 
