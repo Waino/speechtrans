@@ -94,7 +94,6 @@ class E2EModel(nn.Module):
             inp = src
             padding_idx = self.src_txt_encoder.embeddings.word_padding_idx
             mask = src.data.eq(padding_idx).squeeze(2)
-        #elif task = 'asr':
         else:
             raise Exception('Unknown task "{}"'.format(task))
 
@@ -111,6 +110,7 @@ class E2EModel(nn.Module):
             mask = mask_type(
                 memory_bank.size(0), memory_bank.size(1)).zero_()
         mask = mask.byte()
+        memory_lengths = np.sum(1 - mask, axis=1)
 
         # decode to src
         enc_state = self.src_txt_decoder.init_decoder_state(
