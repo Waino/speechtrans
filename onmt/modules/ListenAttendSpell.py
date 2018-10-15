@@ -130,7 +130,6 @@ class E2EModel(nn.Module):
         projected_encoder_states = (projected_hidden_states, projected_cell_states)
            
         # NOTE: The mask is never recalculated!
-        # TODO: Fix this bug
         #if task == 'main':
         #    # the audio feature timestep has been reduced,
         #    # so the padding mask is no longer valid
@@ -139,12 +138,14 @@ class E2EModel(nn.Module):
         #        memory_bank.size(0), memory_bank.size(1)).zero_()
         #mask = mask.byte()
         #memory_lengths = torch.sum(1 - mask, dim=0)
-        #print(memory_lengths)
 
-        print(mask)
         if task == 'main':
-            memory_lenghts = torch.sum(1 - mask[::2**self.num_encoder_layers], dim=0)
-        print(memory_lenghts)
+            mask_type = type(mask.data)
+            new_mask = mask_type(
+                memory_bank.size(0), memory_bank.size(1)).zero_()
+            new_mask[:,:] = mask[:,::2**self.num_encoder_layers].transpose(0,1).data
+            mask = new_mask
+            memory_lengths = torch.sum(1-mask, dim=0)
 
         # decode to src
         enc_state = self.src_txt_decoder.init_decoder_state(
@@ -152,7 +153,7 @@ class E2EModel(nn.Module):
         # (decoder_outputs, dec_state, attns)
         src_txt_decoder_out = self.src_txt_decoder(
             src_feed, memory_bank, enc_state,
-            memory_lengths = memory_lengths)
+            memory_lengths = memory_lengths) 
 
         # decode to tgt
         enc_state = self.tgt_txt_decoder.init_decoder_state(
