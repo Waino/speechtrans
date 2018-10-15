@@ -81,6 +81,14 @@ class E2EModel(nn.Module):
         self.src_txt_encoder = src_txt_encoder
         self.src_txt_decoder = src_txt_decoder
         self.tgt_txt_decoder = tgt_txt_decoder
+        # Init encoder->decoder hidden state projection layer:
+        self.num_encoder_layers = len(self.src_aud_encoder.las_modules)
+        num_decoder_layers = self.src_txt_decoder.num_layers
+        hidden_size = self.src_aud_encoder.las_modules[-1].BLSTM.hidden_size*2
+        self.bridge_hidden_projections = [torch.nn.Linear(hidden_size, hidden_size)
+                              for _ in range(num_decoder_layers)]
+        self.bridge_cell_projections = [torch.nn.Linear(hidden_size, hidden_size)
+                              for _ in range(num_decoder_layers)]
 
     def forward(self, feats, feats_mask, src, tgt, task='main'):
         if task == 'main':
@@ -103,29 +111,55 @@ class E2EModel(nn.Module):
 
         # encode with appropriate encoder
         enc_final, memory_bank = encoder(inp, mask)
+
+        # fix as done in fix onmt/Models.py->RNNDecoderBase->init_decoder_state
+        # The encoder hidden is  (layers*directions) x batch x dim.
+        # We need to convert it to layers x batch x (directions*dim).
+        # NOTE: we are assuming directions = 2 as the LAS encoder should be bidirectional
+        # NOTE: do not use with -brnn flag, as that will automatically try to fix this same thing again
+        enc_hidden_final, enc_cell_final = [
+            torch.cat([h[0:h.size(0):2], h[1:h.size(0):2]], 2)
+            for h in enc_final]
+
+        # Project to encoder hidden state to each decoder layer hidden state init separately
+        # These will be decoder_layers x batch x (directions*dim)
+        projected_hidden_states = torch.cat([
+            hidden_proj(enc_hidden_final) for hidden_proj in self.bridge_hidden_projections], 0)
+        projected_cell_states = torch.cat([
+            cell_proj(enc_hidden_final) for cell_proj in self.bridge_cell_projections], 0)
+        projected_encoder_states = (projected_hidden_states, projected_cell_states)
+           
+        # NOTE: The mask is never recalculated!
+        # TODO: Fix this bug
+        #if task == 'main':
+        #    # the audio feature timestep has been reduced,
+        #    # so the padding mask is no longer valid
+        #    mask_type = type(mask.data)
+        #    mask = mask_type(
+        #        memory_bank.size(0), memory_bank.size(1)).zero_()
+        #mask = mask.byte()
+        #memory_lengths = torch.sum(1 - mask, dim=0)
+        #print(memory_lengths)
+
+        print(mask)
         if task == 'main':
-            # the audio feature timestep has been reduced,
-            # so the padding mask is no longer valid
-            mask_type = type(mask.data)
-            mask = mask_type(
-                memory_bank.size(0), memory_bank.size(1)).zero_()
-        mask = mask.byte()
-        memory_lengths = np.sum(1 - mask, axis=1)
+            memory_lenghts = torch.sum(1 - mask[::2**self.num_encoder_layers], dim=0)
+        print(memory_lenghts)
 
         # decode to src
         enc_state = self.src_txt_decoder.init_decoder_state(
-            mask, memory_bank, enc_final)
+            mask, memory_bank, projected_encoder_states)
         # (decoder_outputs, dec_state, attns)
         src_txt_decoder_out = self.src_txt_decoder(
             src_feed, memory_bank, enc_state,
-            mask=mask)
+            memory_lengths = memory_lengths)
 
         # decode to tgt
         enc_state = self.tgt_txt_decoder.init_decoder_state(
-            mask, memory_bank, enc_final)
+            mask, memory_bank, projected_encoder_states)
         # (decoder_outputs, dec_state, attns)
         tgt_txt_decoder_out = self.tgt_txt_decoder(
             tgt_feed, memory_bank, enc_state,
-            mask=mask)
+            memory_lengths = memory_lengths)
 
         return src_txt_decoder_out, tgt_txt_decoder_out

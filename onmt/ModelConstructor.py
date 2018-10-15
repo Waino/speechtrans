@@ -348,7 +348,7 @@ def make_e2e_model(model_opt, fields, gpu, checkpoint=None):
     ### Make decoders.
     # source text
     src_txt_decoder = make_decoder(model_opt, src_embeddings,
-                                   layers=model_opt.src_decoder_layers)
+                                   layers=model_opt.src_decoder_layers,)
     # target text
     tgt_txt_decoder = make_decoder(model_opt, tgt_embeddings)
 
